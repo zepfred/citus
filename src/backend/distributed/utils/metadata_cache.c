@@ -243,8 +243,18 @@ bool
 IsDistributedTable(Oid relationId)
 {
 	DistTableCacheEntry *cacheEntry = NULL;
+	instr_time planstart, planduration;
+	double planDurationMillis;
+
+	INSTR_TIME_SET_CURRENT(planstart);
 
 	cacheEntry = LookupDistTableCacheEntry(relationId);
+
+	INSTR_TIME_SET_CURRENT(planduration);
+	INSTR_TIME_SUBTRACT(planduration, planstart);
+
+	planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+	elog(WARNING, "LookupDistTableCacheEntry time %f milliseconds", planDurationMillis);
 
 	/*
 	 * If extension hasn't been created, or has the wrong version and the

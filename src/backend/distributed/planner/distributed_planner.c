@@ -139,8 +139,20 @@ distributed_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		 * First call into standard planner. This is required because the Citus
 		 * planner relies on parse tree transformations made by postgres' planner.
 		 */
+		instr_time planstart;
+		instr_time planduration;
+		double planDurationMillis;
+
+		INSTR_TIME_SET_CURRENT(planstart);
+
 
 		result = standard_planner(parse, cursorOptions, boundParams);
+
+		INSTR_TIME_SET_CURRENT(planduration);
+		INSTR_TIME_SUBTRACT(planduration, planstart);
+
+		planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+		elog(WARNING, "standard planner time %f milliseconds", planDurationMillis);
 
 		if (needsDistributedPlanning)
 		{
@@ -149,6 +161,13 @@ distributed_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 			result = CreateDistributedPlan(planId, result, originalQuery, parse,
 										   boundParams, plannerRestrictionContext);
 		}
+
+		INSTR_TIME_SET_CURRENT(planduration);
+		INSTR_TIME_SUBTRACT(planduration, planstart);
+
+		planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+		elog(WARNING, "total planning time %f milliseconds", planDurationMillis);
 	}
 	PG_CATCH();
 	{
@@ -735,7 +754,7 @@ CreateDistributedSelectPlan(uint64 planId, Query *originalQuery, Query *query,
 
 	planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
 
-	elog(WARNING, "planning time %f milliseconds", planDurationMillis);
+	elog(WARNING, "physical planning time %f milliseconds", planDurationMillis);
 
 	/* distributed plan currently should always succeed or error out */
 	Assert(distributedPlan && distributedPlan->planningError == NULL);

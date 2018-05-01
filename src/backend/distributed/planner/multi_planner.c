@@ -214,10 +214,26 @@ CreateDistributedPlan(PlannedStmt *localPlan, Query *originalQuery, Query *query
 		if ((!distributedPlan || distributedPlan->planningError) && !hasUnresolvedParams)
 		{
 			/* Create and optimize logical plan */
-			instr_time	planstart, planduration;
+			instr_time	planstart, logicaloptimizer, physicalplanner, planduration;
 			double planDurationMillis = 0.0;
+			INSTR_TIME_SET_CURRENT(planstart);
+
 			MultiTreeRoot *logicalPlan = MultiLogicalPlanCreate(query);
+			INSTR_TIME_SET_CURRENT(planduration);
+			INSTR_TIME_SUBTRACT(planduration, planstart);
+			planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+			elog(WARNING, "logical planner time %f milliseconds", planDurationMillis);
+
+			INSTR_TIME_SET_CURRENT(logicaloptimizer);
+
 			MultiLogicalPlanOptimize(logicalPlan);
+
+			INSTR_TIME_SET_CURRENT(planduration);
+			INSTR_TIME_SUBTRACT(planduration, logicaloptimizer);
+			planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+			elog(WARNING, "logical optimizer time %f milliseconds", planDurationMillis);
 
 			/*
 			 * This check is here to make it likely that all node types used in
@@ -227,17 +243,23 @@ CreateDistributedPlan(PlannedStmt *localPlan, Query *originalQuery, Query *query
 			 * physical plan, so there's no need to check that separately.
 			 */
 			CheckNodeIsDumpable((Node *) logicalPlan);
-			INSTR_TIME_SET_CURRENT(planstart);
+			INSTR_TIME_SET_CURRENT(physicalplanner);
 
 
 			/* Create the physical plan */
 			distributedPlan = MultiPhysicalPlanCreate(logicalPlan);
 			INSTR_TIME_SET_CURRENT(planduration);
-			INSTR_TIME_SUBTRACT(planduration, planstart);
+			INSTR_TIME_SUBTRACT(planduration, physicalplanner);
 
 			planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
 
-			elog(WARNING, "planning time %f milliseconds", planDurationMillis);
+			elog(WARNING, "physical planner time %f milliseconds", planDurationMillis);
+
+			INSTR_TIME_SET_CURRENT(planduration);
+			INSTR_TIME_SUBTRACT(planduration, planstart);
+			planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+			elog(WARNING, "total citus planner time %f milliseconds", planDurationMillis);
 
 			/* distributed plan currently should always succeed or error out */
 			Assert(distributedPlan && distributedPlan->planningError == NULL);

@@ -7565,6 +7565,7 @@ generate_operator_name(Oid operid, Oid arg1, Oid arg2)
 	 * resolve the correct operator given the unqualified op name with the
 	 * specified argtypes.
 	 */
+#if 0
 	switch (operform->oprkind)
 	{
 		case 'b':
@@ -7584,7 +7585,8 @@ generate_operator_name(Oid operid, Oid arg1, Oid arg2)
 			p_result = NULL;	/* keep compiler quiet */
 			break;
 	}
-
+#endif
+	p_result = NULL;
 	if (p_result != NULL && oprid(p_result) == operid)
 		nspname = NULL;
 	else

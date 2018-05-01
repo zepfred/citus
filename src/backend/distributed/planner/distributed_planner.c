@@ -619,8 +619,6 @@ CreateDistributedSelectPlan(uint64 planId, Query *originalQuery, Query *query,
 	MultiTreeRoot *logicalPlan = NULL;
 	List *subPlanList = NIL;
 
-	instr_time	planstart, planduration;
-	double planDurationMillis = 0.0;
 	/*
 	 * For select queries we, if router executor is enabled, first try to
 	 * plan the query as a router query. If not supported, otherwise try
@@ -729,10 +727,28 @@ CreateDistributedSelectPlan(uint64 planId, Query *originalQuery, Query *query,
 	 */
 	query->cteList = NIL;
 	Assert(originalQuery->cteList == NIL);
+	{
+		instr_time	planstart, logicaloptimizer, physicalplanner, planduration;
+		double planDurationMillis = 0.0;
+
+		INSTR_TIME_SET_CURRENT(planstart);
 
 	logicalPlan = MultiLogicalPlanCreate(originalQuery, query,
 										 plannerRestrictionContext);
+	INSTR_TIME_SET_CURRENT(planduration);
+	INSTR_TIME_SUBTRACT(planduration, planstart);
+	planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+	elog(WARNING, "logical planner time %f milliseconds", planDurationMillis);
+	INSTR_TIME_SET_CURRENT(logicaloptimizer);
+
 	MultiLogicalPlanOptimize(logicalPlan);
+
+	INSTR_TIME_SET_CURRENT(planduration);
+	INSTR_TIME_SUBTRACT(planduration, logicaloptimizer);
+	planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
+
+	elog(WARNING, "logical optimizer time %f milliseconds", planDurationMillis);
 
 	/*
 	 * This check is here to make it likely that all node types used in
@@ -745,17 +761,18 @@ CreateDistributedSelectPlan(uint64 planId, Query *originalQuery, Query *query,
 
 
 
-	INSTR_TIME_SET_CURRENT(planstart);
+	INSTR_TIME_SET_CURRENT(physicalplanner);
 	/* Create the physical plan */
 	distributedPlan = CreatePhysicalDistributedPlan(logicalPlan,
 													plannerRestrictionContext);
 	INSTR_TIME_SET_CURRENT(planduration);
-	INSTR_TIME_SUBTRACT(planduration, planstart);
+	INSTR_TIME_SUBTRACT(planduration, physicalplanner);
 
 	planDurationMillis = INSTR_TIME_GET_MILLISEC(planduration);
 
 	elog(WARNING, "physical planning time %f milliseconds", planDurationMillis);
 
+	}
 	/* distributed plan currently should always succeed or error out */
 	Assert(distributedPlan && distributedPlan->planningError == NULL);
 

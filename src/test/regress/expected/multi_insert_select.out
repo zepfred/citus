@@ -1179,7 +1179,6 @@ FROM
 DEBUG:  cannot perform distributed INSERT INTO ... SELECT becuase the partition columns in the source table and subquery do not match
 DETAIL:  The target table's partition column should correspond to a partition column in the subquery.
 DEBUG:  Collecting INSERT ... SELECT results on coordinator
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 -- foo2 is recursively planned and INSERT...SELECT is done via coordinator
 INSERT INTO agg_events

@@ -16,6 +16,7 @@
 #include "catalog/pg_type.h"
 #include "distributed/citus_nodefuncs.h"
 #include "distributed/citus_nodes.h"
+#include "distributed/deparse_shard_query.h"
 #include "distributed/insert_select_planner.h"
 #include "distributed/intermediate_results.h"
 #include "distributed/metadata_cache.h"
@@ -28,9 +29,11 @@
 #include "distributed/multi_master_planner.h"
 #include "distributed/multi_router_planner.h"
 #include "distributed/recursive_planning.h"
+#include "distributed/shard_pruning.h"
 #include "executor/executor.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
+#include "optimizer/clauses.h"
 #include "parser/parsetree.h"
 #include "parser/parse_type.h"
 #include "optimizer/cost.h"
@@ -50,7 +53,10 @@ static uint64 NextPlanId = 1;
 
 /* local function forward declarations */
 static bool NeedsDistributedPlanningWalker(Node *node, void *context);
-static PlannedStmt * CreateDistributedPlan(uint64 planId, PlannedStmt *localPlan,
+static DistributedPlan * CreateSimpleDistributedPlan(Query *query);
+static List * RelationOidsForQuery(Query *query);
+static PlannedStmt * CreateEmptyPlannedStmt(Query *parse);
+static PlannedStmt * CreateDistributedPlan(uint64 planId, int cursorOptions,
 										   Query *originalQuery, Query *query,
 										   ParamListInfo boundParams,
 										   PlannerRestrictionContext *
@@ -67,6 +73,7 @@ static void AssignRTEIdentities(Query *queryTree);
 static void AssignRTEIdentity(RangeTblEntry *rangeTableEntry, int rteIdentifier);
 static void AdjustPartitioningForDistributedPlanning(Query *parse,
 													 bool setPartitionedTablesInherited);
+static PlannedStmt * CreateEmptyPlannedStmt(Query *parse);
 static PlannedStmt * FinalizePlan(PlannedStmt *localPlan,
 								  DistributedPlan *distributedPlan);
 static PlannedStmt * FinalizeNonRouterPlan(PlannedStmt *localPlan,
@@ -99,56 +106,75 @@ distributed_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		needsDistributedPlanning = true;
 	}
 
-	if (needsDistributedPlanning)
+	if (!needsDistributedPlanning)
 	{
+		/* call the regular postgres planner for queries without distributed tables */
+		result = standard_planner(parse, cursorOptions, boundParams);
+
 		/*
-		 * Inserting into a local table needs to go through the regular postgres
-		 * planner/executor, but the SELECT needs to go through Citus. We currently
-		 * don't have a way of doing both things and therefore error out, but do
-		 * have a handy tip for users.
+		 * In some cases, for example; parameterized SQL functions, we may miss that
+		 * there is a need for distributed planning. Such cases only become clear after
+		 * standard_planner performs some modifications on parse tree. In such cases
+		 * we will simply error out.
 		 */
-		if (InsertSelectIntoLocalTable(parse))
+		if (NeedsDistributedPlanning(parse))
 		{
-			ereport(ERROR, (errmsg("cannot INSERT rows from a distributed query into a "
-								   "local table"),
-							errhint("Consider using CREATE TEMPORARY TABLE tmp AS "
-									"SELECT ... and inserting from the temporary "
-									"table.")));
+			ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot perform distributed planning on this "
+								   "query because parameterized queries for SQL "
+								   "functions referencing distributed tables are "
+								   "not supported"),
+							errhint("Consider using PL/pgSQL functions instead.")));
 		}
 
-		/*
-		 * standard_planner scribbles on it's input, but for deparsing we need the
-		 * unmodified form. Note that we keep RTE_RELATIONs with their identities
-		 * set, which doesn't break our goals, but, prevents us keeping an extra copy
-		 * of the query tree. Note that we copy the query tree once we're sure it's a
-		 * distributed query.
-		 */
-		AssignRTEIdentities(parse);
-		originalQuery = copyObject(parse);
-
-		setPartitionedTablesInherited = false;
-		AdjustPartitioningForDistributedPlanning(parse, setPartitionedTablesInherited);
+		return result;
 	}
+
+	/*
+	 * Inserting into a local table needs to go through the regular postgres
+	 * planner/executor, but the SELECT needs to go through Citus. We currently
+	 * don't have a way of doing both things and therefore error out, but do
+	 * have a handy tip for users.
+	 */
+	if (InsertSelectIntoLocalTable(parse))
+	{
+		ereport(ERROR, (errmsg("cannot INSERT rows from a distributed query into a "
+							   "local table"),
+						errhint("Consider using CREATE TEMPORARY TABLE tmp AS "
+								"SELECT ... and inserting from the temporary "
+								"table.")));
+	}
+
+	/*
+	 * We may call call standard_planner during distributed planning.
+	 * standard_planner scribbles on it's input, but for deparsing we need the
+	 * unmodified form. Note that we keep RTE_RELATIONs with their identities
+	 * set, which doesn't break our goals, but, prevents us keeping an extra copy
+	 * of the query tree.
+	 */
+	AssignRTEIdentities(parse);
+	originalQuery = copyObject(parse);
+
+	/*
+	 * Distributed planning becomes simpler if we treat partitioned tables as
+	 * regular tables. The workers can handle partitioning-related planning
+	 * logic.
+	 */
+	setPartitionedTablesInherited = false;
+	AdjustPartitioningForDistributedPlanning(parse, setPartitionedTablesInherited);
 
 	/* create a restriction context and put it at the end if context list */
 	plannerRestrictionContext = CreateAndPushPlannerRestrictionContext();
 
 	PG_TRY();
 	{
-		/*
-		 * First call into standard planner. This is required because the Citus
-		 * planner relies on parse tree transformations made by postgres' planner.
-		 */
+		uint64 planId = NextPlanId++;
 
-		result = standard_planner(parse, cursorOptions, boundParams);
+		result = CreateDistributedPlan(planId, cursorOptions, originalQuery, parse,
+									   boundParams, plannerRestrictionContext);
 
-		if (needsDistributedPlanning)
-		{
-			uint64 planId = NextPlanId++;
+//elog(NOTICE, "%s", pretty_format_node_dump(nodeToString(result)));
 
-			result = CreateDistributedPlan(planId, result, originalQuery, parse,
-										   boundParams, plannerRestrictionContext);
-		}
 	}
 	PG_CATCH();
 	{
@@ -157,31 +183,11 @@ distributed_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 	}
 	PG_END_TRY();
 
-	if (needsDistributedPlanning)
-	{
-		setPartitionedTablesInherited = true;
-
-		AdjustPartitioningForDistributedPlanning(parse, setPartitionedTablesInherited);
-	}
-
 	/* remove the context from the context list */
 	PopPlannerRestrictionContext();
 
-	/*
-	 * In some cases, for example; parameterized SQL functions, we may miss that
-	 * there is a need for distributed planning. Such cases only become clear after
-	 * standart_planner performs some modifications on parse tree. In such cases
-	 * we will simply error out.
-	 */
-	if (!needsDistributedPlanning && NeedsDistributedPlanning(parse))
-	{
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-						errmsg("cannot perform distributed planning on this "
-							   "query because parameterized queries for SQL "
-							   "functions referencing distributed tables are "
-							   "not supported"),
-						errhint("Consider using PL/pgSQL functions instead.")));
-	}
+	setPartitionedTablesInherited = true;
+	AdjustPartitioningForDistributedPlanning(parse, setPartitionedTablesInherited);
 
 	return result;
 }
@@ -379,6 +385,67 @@ GetRTEIdentity(RangeTblEntry *rte)
 
 
 /*
+ * CreateEmtpyPlannedStmt returns a new PlannedStmt for the given query,
+ * without a planTree set.
+ */
+static PlannedStmt *
+CreateEmptyPlannedStmt(Query *parse)
+{
+	PlannedStmt *result = makeNode(PlannedStmt);
+
+	result->commandType = parse->commandType;
+	result->queryId = parse->queryId;
+	result->hasReturning = (parse->returningList != NIL);
+	result->hasModifyingCTE = parse->hasModifyingCTE;
+	result->canSetTag = parse->canSetTag;
+
+	result->transientPlan = false;
+	result->dependsOnRole = false;
+	result->parallelModeNeeded = false;
+	result->planTree = NULL;
+	result->rtable = parse->rtable;
+	result->resultRelations = NIL;
+	result->nonleafResultRelations = NIL;
+	result->rootResultRelations = NIL;
+	result->subplans = NIL;
+	result->rewindPlanIDs = NULL;
+	result->rowMarks = NIL;
+	result->relationOids = RelationOidsForQuery(parse);
+	result->invalItems = NIL;
+	result->nParamExec = 0;
+
+	result->utilityStmt = parse->utilityStmt;
+	result->stmt_location = parse->stmt_location;
+	result->stmt_len = parse->stmt_len;
+
+	return result;
+}
+
+
+/*
+ * RelationOidsForQuery builds a list of the OIDs of all relations in the query.
+ */
+static List *
+RelationOidsForQuery(Query *query)
+{
+	List *rangeTableList = NIL;
+	ListCell *rangeTableCell = NULL;
+	List *relationOidList = NIL;
+
+	ExtractRangeTableRelationWalker((Node *) query, &rangeTableList);
+
+	foreach(rangeTableCell, rangeTableList)
+	{
+		RangeTblEntry *rangeTableEntry = lfirst_node(RangeTblEntry, rangeTableCell);
+
+		relationOidList = lappend_oid(relationOidList, rangeTableEntry->relid);
+	}
+
+	return relationOidList;
+}
+
+
+/*
  * IsModifyCommand returns true if the query performs modifications, false
  * otherwise.
  */
@@ -471,7 +538,7 @@ IsModifyDistributedPlan(DistributedPlan *distributedPlan)
  * query into a distributed plan.
  */
 static PlannedStmt *
-CreateDistributedPlan(uint64 planId, PlannedStmt *localPlan, Query *originalQuery,
+CreateDistributedPlan(uint64 planId, int cursorOptions, Query *originalQuery,
 					  Query *query, ParamListInfo boundParams,
 					  PlannerRestrictionContext *plannerRestrictionContext)
 {
@@ -491,28 +558,54 @@ CreateDistributedPlan(uint64 planId, PlannedStmt *localPlan, Query *originalQuer
 
 	if (IsModifyCommand(query))
 	{
+		/*
+		 * Don't run DML if the coordinator is a standby or if the workers are.
+		 */
 		EnsureModificationsCanRun();
+	}
 
-		if (InsertSelectIntoDistributedTable(originalQuery))
-		{
-			distributedPlan =
-				CreateInsertSelectPlan(originalQuery, plannerRestrictionContext);
-		}
-		else
-		{
-			/* modifications are always routed through the same planner/executor */
-			distributedPlan =
-				CreateModifyPlan(originalQuery, query, plannerRestrictionContext);
-		}
-
-		Assert(distributedPlan);
+	/*
+	 * First try to create a simple distributed plan for queries without joins,
+	 * subqueries, and a single partition column value. We do this primarily
+	 * to avoid the computational overhead of calling standard_planner, which
+	 * is necessary for some of the more advanced planning logic.
+	 */
+	distributedPlan = CreateSimpleDistributedPlan(originalQuery);
+	if (distributedPlan != NULL)
+	{
+		resultPlan = CreateEmptyPlannedStmt(originalQuery);
+		resultPlan->planTree = makeNode(Plan);
+		resultPlan->planTree->targetlist = query->targetList;
 	}
 	else
 	{
-		distributedPlan =
-			CreateDistributedSelectPlan(planId, originalQuery, query, boundParams,
-										hasUnresolvedParams,
-										plannerRestrictionContext);
+		/*
+		 * First call into standard planner. This is required because the Citus
+		 * planner relies on parse tree transformations made by postgres' planner.
+		 * Moreover, we extract relation- and join restriction information.
+		 */
+		resultPlan = standard_planner(query, cursorOptions, boundParams);
+
+		if (InsertSelectIntoDistributedTable(originalQuery))
+		{
+			/* INSERT...SELECT commands are treated in a special way */
+			distributedPlan =
+				CreateInsertSelectPlan(originalQuery, plannerRestrictionContext);
+		}
+		else if (IsModifyCommand(query))
+		{
+			/* other modifications are always routed through the "router" planner/executor */
+			distributedPlan =
+				CreateModifyPlan(originalQuery, query, plannerRestrictionContext);
+		}
+		else
+		{
+			/* all remaining SELECT queries */
+			distributedPlan =
+				CreateDistributedSelectPlan(planId, originalQuery, query, boundParams,
+											hasUnresolvedParams,
+											plannerRestrictionContext);
+		}
 	}
 
 	/*
@@ -558,7 +651,7 @@ CreateDistributedPlan(uint64 planId, PlannedStmt *localPlan, Query *originalQuer
 	distributedPlan->planId = planId;
 
 	/* create final plan by combining local plan with distributed plan */
-	resultPlan = FinalizePlan(localPlan, distributedPlan);
+	resultPlan = FinalizePlan(resultPlan, distributedPlan);
 
 	/*
 	 * As explained above, force planning costs to be unrealistically high if
@@ -576,6 +669,110 @@ CreateDistributedPlan(uint64 planId, PlannedStmt *localPlan, Query *originalQuer
 	}
 
 	return resultPlan;
+}
+
+
+/*
+ * CreateSimpleDistributedPlan tries to create a distributed plan for simple
+ * SELECT queries that have no joins or subqueries and prune down to a single
+ * shard based on the WHERE clause.
+ */
+static DistributedPlan *
+CreateSimpleDistributedPlan(Query *query)
+{
+	List *rtable = NIL;
+	RangeTblEntry *rangeTableEntry = NULL;
+	char partitionMethod = 0;
+	FromExpr *joinTree = NULL;
+	List *whereClauseList = NIL;
+	List *shardList = NIL;
+	ShardInterval *shardInterval = NULL;
+	RelationShard *relationShard = NULL;
+	List *relationShardList = NIL;
+	List *taskList = NIL;
+	List *placementList = NIL;
+	Job *job = NULL;
+	DistributedPlan *distributedPlan = NULL;
+
+	CmdType commandType = query->commandType;
+	if (commandType != CMD_SELECT)
+	{
+		return NULL;
+	}
+
+	if (!EnableRouterExecution)
+	{
+		return NULL;
+	}
+
+	if (query->hasSubLinks)
+	{
+		return NULL;
+	}
+
+	rtable = query->rtable;
+	if (list_length(rtable) != 1)
+	{
+		return NULL;
+	}
+
+	rangeTableEntry = (RangeTblEntry *) linitial(rtable);
+	if (rangeTableEntry->rtekind != RTE_RELATION)
+	{
+		return NULL;
+	}
+
+	partitionMethod = PartitionMethod(rangeTableEntry->relid);
+	if (partitionMethod != DISTRIBUTE_BY_NONE &&
+		partitionMethod != DISTRIBUTE_BY_RANGE &&
+		partitionMethod != DISTRIBUTE_BY_HASH)
+	{
+		return NULL;
+	}
+
+	joinTree = query->jointree;
+	if (joinTree == NULL)
+	{
+		return NULL;
+	}
+
+	whereClauseList = make_ands_implicit((Expr *) joinTree->quals);
+	shardList = PruneShards(rangeTableEntry->relid, 1, whereClauseList);
+	if (list_length(shardList) != 1)
+	{
+		return NULL;
+	}
+
+	shardInterval = (ShardInterval *) linitial(shardList);
+
+	relationShard = CitusMakeNode(RelationShard);
+	relationShard->relationId = shardInterval->relationId;
+	relationShard->shardId = shardInterval->shardId;
+	relationShardList = list_make1(relationShard);
+
+	UpdateRelationToShardNames((Node *) query, relationShardList);
+
+	placementList = FinalizedShardPlacementList(shardInterval->shardId);
+
+	taskList = SingleShardSelectTaskList(query, relationShardList, placementList,
+										 shardInterval->shardId);
+
+	job = CitusMakeNode(Job);
+	job->jobId = INVALID_JOB_ID;
+	job->jobQuery = query;
+	job->taskList = taskList;
+	job->dependedJobList = NIL;
+	job->subqueryPushdown = false;
+	job->requiresMasterEvaluation = false;
+	job->deferredPruning = false;
+
+	distributedPlan = CitusMakeNode(DistributedPlan);
+	distributedPlan->workerJob = job;
+	distributedPlan->masterQuery = NULL;
+	distributedPlan->routerExecutable = true;
+	distributedPlan->hasReturning = false;
+
+	return distributedPlan;
 }
 
 
@@ -1117,6 +1314,12 @@ multi_join_restriction_hook(PlannerInfo *root,
 	 * called in a more shorted lived one (e.g. with GEQO).
 	 */
 	plannerRestrictionContext = CurrentPlannerRestrictionContext();
+	if (plannerRestrictionContext == NULL)
+	{
+		/* regular postgres query, nothing to do */
+		return;
+	}
+
 	restrictionsMemoryContext = plannerRestrictionContext->memoryContext;
 	oldMemoryContext = MemoryContextSwitchTo(restrictionsMemoryContext);
 
@@ -1174,6 +1377,12 @@ multi_relation_restriction_hook(PlannerInfo *root, RelOptInfo *relOptInfo, Index
 	 * called in a more shorted lived one (e.g. with GEQO).
 	 */
 	plannerRestrictionContext = CurrentPlannerRestrictionContext();
+	if (plannerRestrictionContext == NULL)
+	{
+		/* regular postgres query, nothing to do */
+		return;
+	}
+
 	restrictionsMemoryContext = plannerRestrictionContext->memoryContext;
 	oldMemoryContext = MemoryContextSwitchTo(restrictionsMemoryContext);
 
@@ -1409,14 +1618,18 @@ CreateAndPushPlannerRestrictionContext(void)
 
 /*
  * CurrentRestrictionContext returns the the most recently added
- * PlannerRestrictionContext from the plannerRestrictionContextList list.
+ * PlannerRestrictionContext from the plannerRestrictionContextList list,
+ * or NULL if the list is empty.
  */
 static PlannerRestrictionContext *
 CurrentPlannerRestrictionContext(void)
 {
 	PlannerRestrictionContext *plannerRestrictionContext = NULL;
 
-	Assert(plannerRestrictionContextList != NIL);
+	if (plannerRestrictionContextList == NIL)
+	{
+		return NULL;
+	}
 
 	plannerRestrictionContext =
 		(PlannerRestrictionContext *) linitial(plannerRestrictionContextList);

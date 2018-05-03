@@ -39,7 +39,6 @@ SELECT count(*) FROM orders_hash_partitioned;
 (1 row)
 
 SELECT count(*) FROM orders_hash_partitioned WHERE o_orderkey = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------
@@ -47,7 +46,6 @@ DEBUG:  Plan is router executable
 (1 row)
 
 SELECT count(*) FROM orders_hash_partitioned WHERE o_orderkey = 2;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------
@@ -55,7 +53,6 @@ DEBUG:  Plan is router executable
 (1 row)
 
 SELECT count(*) FROM orders_hash_partitioned WHERE o_orderkey = 3;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------
@@ -63,7 +60,6 @@ DEBUG:  Plan is router executable
 (1 row)
 
 SELECT count(*) FROM orders_hash_partitioned WHERE o_orderkey = 4;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------
@@ -72,7 +68,6 @@ DEBUG:  Plan is router executable
 
 SELECT count(*) FROM orders_hash_partitioned
 	WHERE o_orderkey = 1 AND o_clerk = 'aaa';
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------
@@ -324,7 +319,6 @@ SELECT count(*) FROM orders_hash_partitioned
 
 SELECT count(*) FROM orders_hash_partitioned
 	WHERE o_orderkey = random() AND o_orderkey = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count 
 -------

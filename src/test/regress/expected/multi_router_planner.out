@@ -126,7 +126,6 @@ DEBUG:  Plan is router executable
 -- single-shard tests
 -- test simple select for a single row
 SELECT * FROM articles_hash WHERE author_id = 10 AND id = 50;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |   title   | word_count 
 ----+-----------+-----------+------------
@@ -135,7 +134,6 @@ DEBUG:  Plan is router executable
 
 -- get all titles by a single author
 SELECT title FROM articles_hash WHERE author_id = 10;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
    title    
 ------------
@@ -150,7 +148,6 @@ DEBUG:  Plan is router executable
 SELECT title, word_count FROM articles_hash
 	WHERE author_id = 10
 	ORDER BY word_count DESC NULLS LAST;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
    title    | word_count 
 ------------+------------
@@ -166,7 +163,6 @@ SELECT title, id FROM articles_hash
 	WHERE author_id = 5
 	ORDER BY id
 	LIMIT 2;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
   title  | id 
 ---------+----
@@ -179,7 +175,6 @@ DEBUG:  Plan is router executable
 SELECT title, author_id FROM articles_hash
 	WHERE author_id = 7 OR author_id = 8
 	ORDER BY author_id ASC, id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
     title    | author_id 
 -------------+-----------
@@ -198,7 +193,6 @@ DEBUG:  Plan is router executable
 -- same query is router executable with no order by
 SELECT title, author_id FROM articles_hash
 	WHERE author_id = 7 OR author_id = 8;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
     title    | author_id 
 -------------+-----------
@@ -221,7 +215,6 @@ SELECT author_id, sum(word_count) AS corpus_size FROM articles_hash
 	GROUP BY author_id
 	HAVING sum(word_count) > 1000
 	ORDER BY sum(word_count) DESC;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  author_id | corpus_size 
 -----------+-------------
@@ -237,7 +230,6 @@ SELECT author_id, sum(word_count) AS corpus_size FROM articles_hash
 	GROUP BY author_id
 	HAVING sum(word_count) > 1000
 	ORDER BY sum(word_count) DESC;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  author_id | corpus_size 
 -----------+-------------
@@ -290,7 +282,6 @@ DEBUG:  Plan is router executable
 -- queries with CTEs are supported even if CTE is not referenced inside query
 WITH first_author AS ( SELECT id FROM articles_hash WHERE author_id = 1)
 SELECT title FROM articles_hash WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
     title     
 --------------
@@ -330,10 +321,8 @@ WITH id_author AS ( SELECT id, author_id FROM articles_hash WHERE author_id = 1)
 id_title AS (SELECT id, title from articles_hash WHERE author_id = 2)
 SELECT * FROM id_author, id_title WHERE id_author.id = id_title.id;
 DEBUG:  generating subplan 67_1 for CTE id_author: SELECT id, author_id FROM public.articles_hash WHERE (author_id = 1)
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 DEBUG:  generating subplan 67_2 for CTE id_title: SELECT id, title FROM public.articles_hash WHERE (author_id = 2)
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 DEBUG:  Plan 67 query after replacing subqueries and CTEs: SELECT id_author.id, id_author.author_id, id_title.id, id_title.title FROM (SELECT intermediate_result.id, intermediate_result.author_id FROM read_intermediate_result('67_1'::text, 'binary'::citus_copy_format) intermediate_result(id bigint, author_id bigint)) id_author, (SELECT intermediate_result.id, intermediate_result.title FROM read_intermediate_result('67_2'::text, 'binary'::citus_copy_format) intermediate_result(id bigint, title character varying(20))) id_title WHERE (id_author.id = id_title.id)
 DEBUG:  Creating router plan
@@ -463,7 +452,6 @@ SELECT
 	WHERE author_id = 1 or author_id = 3
 	GROUP BY GROUPING SETS ((id),(subtitle))
 	ORDER BY id, subtitle;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | subtitle | count 
 ----+----------+-------
@@ -631,7 +619,6 @@ HINT:  Consider using an equality filter on the distributed table's partition co
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -646,7 +633,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1 OR author_id = 17;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -675,7 +661,6 @@ SELECT *
 SELECT id as article_id, word_count * id as random_value
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  article_id | random_value 
 ------------+--------------
@@ -726,7 +711,6 @@ SELECT a.author_id as first_author, b.word_count as second_word_count
 	LIMIT 3;
 DEBUG:  Found no worker with all shard placements
 DEBUG:  generating subplan 97_1 for CTE single_shard: SELECT id, author_id, title, word_count FROM public.articles_single_shard_hash
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 DEBUG:  Plan 97 query after replacing subqueries and CTEs: SELECT a.author_id AS first_author, b.word_count AS second_word_count FROM public.articles_hash a, (SELECT intermediate_result.id, intermediate_result.author_id, intermediate_result.title, intermediate_result.word_count FROM read_intermediate_result('97_1'::text, 'binary'::citus_copy_format) intermediate_result(id bigint, author_id bigint, title character varying(20), word_count integer)) b WHERE ((a.author_id = 2) AND (a.author_id = b.author_id)) LIMIT 3
 DEBUG:  Creating router plan
@@ -740,7 +724,6 @@ SELECT *
 	FROM articles_hash
 	WHERE author_id = 1
 	LIMIT 3;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -755,7 +738,6 @@ SELECT *
 	WHERE author_id = 1
 	LIMIT 2
 	OFFSET 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -770,7 +752,6 @@ SELECT *
 	ORDER BY id desc
 	LIMIT 2
 	OFFSET 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -785,7 +766,6 @@ SELECT id
 	WHERE author_id = 1
 	GROUP BY id
 	ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id 
 ----
@@ -801,7 +781,6 @@ SELECT DISTINCT id
 	FROM articles_hash
 	WHERE author_id = 1
 	ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id 
 ----
@@ -816,7 +795,6 @@ DEBUG:  Plan is router executable
 SELECT avg(word_count)
 	FROM articles_hash
 	WHERE author_id = 2;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
         avg         
 --------------------
@@ -828,7 +806,6 @@ SELECT max(word_count) as max, min(word_count) as min,
 	   sum(word_count) as sum, count(word_count) as cnt
 	FROM articles_hash
 	WHERE author_id = 2;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
   max  | min  |  sum  | cnt 
 -------+------+-------+-----
@@ -840,7 +817,6 @@ SELECT max(word_count)
 	FROM articles_hash
 	WHERE author_id = 1
 	GROUP BY author_id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
   max  
 -------
@@ -1004,7 +980,6 @@ SET client_min_messages to 'DEBUG2';
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1 and author_id >= 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1033,7 +1008,6 @@ SELECT *
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1 and (id = 1 or id = 41);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -1045,7 +1019,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1 and (id = random()::int  * 0);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
@@ -1123,7 +1096,6 @@ SELECT *
 SELECT *
 	FROM articles_hash
 	WHERE author_id = 1 and (id = abs(id - 2));
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -1162,7 +1134,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE (author_id = 1) and id between 0 and 20;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -1174,7 +1145,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE (author_id = 1) and (id = 1 or id = 31) and title like '%s';
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1186,7 +1156,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE (id = 1 or id = 31) and title like '%s' and (author_id = 1);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1198,7 +1167,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE (title like '%s' or title like 'a%') and (author_id = 1);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1213,7 +1181,6 @@ DEBUG:  Plan is router executable
 SELECT *
 	FROM articles_hash
 	WHERE (title like '%s' or title like 'a%') and (author_id = 1) and (word_count < 3000 or word_count > 8000);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |  title   | word_count 
 ----+-----------+----------+------------
@@ -1226,7 +1193,6 @@ DEBUG:  Plan is router executable
 SELECT LAG(title, 1) over (ORDER BY word_count) prev, title, word_count 
 	FROM articles_hash
 	WHERE author_id = 5;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
    prev   |  title   | word_count 
 ----------+----------+------------
@@ -1241,7 +1207,6 @@ SELECT LAG(title, 1) over (ORDER BY word_count) prev, title, word_count
 	FROM articles_hash
 	WHERE author_id = 5
 	ORDER BY word_count DESC;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
    prev   |  title   | word_count 
 ----------+----------+------------
@@ -1255,7 +1220,6 @@ DEBUG:  Plan is router executable
 SELECT id, MIN(id) over (order by word_count)
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | min 
 ----+-----
@@ -1269,7 +1233,6 @@ DEBUG:  Plan is router executable
 SELECT id, word_count, AVG(word_count) over (order by word_count)
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | word_count |          avg          
 ----+------------+-----------------------
@@ -1283,7 +1246,6 @@ DEBUG:  Plan is router executable
 SELECT word_count, rank() OVER (PARTITION BY author_id ORDER BY word_count)  
 	FROM articles_hash 
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  word_count | rank 
 ------------+------
@@ -1327,7 +1289,6 @@ DEBUG:  Plan is router executable
 SELECT * 
 	FROM articles_hash
 	WHERE author_id = 1 and 1=0;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
@@ -1355,7 +1316,6 @@ DEBUG:  Plan is router executable
 SELECT * 
 	FROM articles_hash a
 	WHERE a.author_id = 10 and int4eq(1, 2);
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
@@ -1407,7 +1367,6 @@ SELECT *
 SELECT * 
 	FROM articles_hash a
 	WHERE a.author_id = null;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
@@ -1554,7 +1513,6 @@ DEBUG:  Plan is router executable
 SELECT word_count, rank() OVER (PARTITION BY author_id ORDER BY word_count)  
 	FROM articles_hash 
 	WHERE author_id = 1 and 1=0;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  word_count | rank 
 ------------+------
@@ -1621,14 +1579,12 @@ SELECT master_create_empty_shard('articles_range') as shard_id \gset
 UPDATE pg_dist_shard SET shardminvalue = 31, shardmaxvalue=40 WHERE shardid = :shard_id;
 -- single shard select queries are router plannable
 SELECT * FROM articles_range where author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
 (0 rows)
 
 SELECT * FROM articles_range where author_id = 1 or author_id = 5;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id | title | word_count 
 ----+-----------+-------+------------
@@ -1810,7 +1766,6 @@ SELECT author_id FROM articles_single_shard_hash
 	ORDER BY
 		author_id
 	LIMIT 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 WARNING:  relation "public.articles_single_shard_hash" does not exist
 CONTEXT:  while executing command on localhost:57637
@@ -1822,7 +1777,6 @@ SELECT author_id FROM articles_hash
 	ORDER BY
 		author_id
 	LIMIT 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 WARNING:  relation "public.articles_hash" does not exist
 CONTEXT:  while executing command on localhost:57637
@@ -1859,7 +1813,6 @@ SELECT * FROM articles_hash
 	ORDER BY
 		author_id, id
 	LIMIT 5;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 WARNING:  relation "public.articles_hash" does not exist
 CONTEXT:  while executing command on localhost:57637
@@ -1882,7 +1835,6 @@ SELECT
 		articles_hash
 	WHERE
 		author_id = 5;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  c 
 ---
@@ -1924,7 +1876,6 @@ SELECT *
 	FROM articles_hash
 	WHERE author_id = 1
 	ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1943,7 +1894,6 @@ SELECT *
 	FROM articles_hash
 	WHERE author_id = 1
 	ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -1962,7 +1912,6 @@ DECLARE test_cursor CURSOR FOR
 		FROM articles_hash
 		WHERE author_id = 1
 		ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 FETCH test_cursor;
  id | author_id |  title   | word_count 
@@ -1997,7 +1946,6 @@ COPY (
 	FROM articles_hash
 	WHERE author_id = 1
 	ORDER BY id) TO STDOUT;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 1	1	arsenous	9572
 11	1	alamo	1347
@@ -2011,13 +1959,11 @@ CREATE TEMP TABLE temp_articles_hash as
 	FROM articles_hash
 	WHERE author_id = 1
 	ORDER BY id;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 -- router plannable queries may include filter for aggragates
 SELECT count(*), count(*) FILTER (WHERE id < 3)
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  count | count 
 -------+-------
@@ -2039,7 +1985,6 @@ PREPARE author_1_articles as
 	FROM articles_hash
 	WHERE author_id = 1;
 EXECUTE author_1_articles;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id | author_id |    title     | word_count 
 ----+-----------+--------------+------------
@@ -2079,10 +2024,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 SELECT author_articles_max_id();
-DEBUG:  Creating router plan
-CONTEXT:  SQL statement "SELECT MAX(id) FROM articles_hash ah
-		WHERE author_id = 1"
-PL/pgSQL function author_articles_max_id() line 5 at SQL statement
 DEBUG:  Plan is router executable
 CONTEXT:  SQL statement "SELECT MAX(id) FROM articles_hash ah
 		WHERE author_id = 1"
@@ -2104,11 +2045,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 SELECT * FROM author_articles_id_word_count();
-DEBUG:  Creating router plan
-CONTEXT:  SQL statement "SELECT ah.id, ah.word_count
-		FROM articles_hash ah
-		WHERE author_id = 1"
-PL/pgSQL function author_articles_id_word_count() line 4 at RETURN QUERY
 DEBUG:  Plan is router executable
 CONTEXT:  SQL statement "SELECT ah.id, ah.word_count
 		FROM articles_hash ah
@@ -2126,7 +2062,6 @@ PL/pgSQL function author_articles_id_word_count() line 4 at RETURN QUERY
 -- materialized views can be created for router plannable queries
 CREATE MATERIALIZED VIEW mv_articles_hash_empty AS
 	SELECT * FROM articles_hash WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
 SELECT * FROM mv_articles_hash_empty;
  id | author_id |    title     | word_count 
@@ -2160,7 +2095,6 @@ SET citus.task_executor_type to 'task-tracker';
 SELECT id
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id 
 ----
@@ -2179,7 +2113,6 @@ DEBUG:  Plan is router executable
 SELECT id
 	FROM articles_hash
 	WHERE author_id = 1;
-DEBUG:  Creating router plan
 DEBUG:  Plan is router executable
  id 
 ----

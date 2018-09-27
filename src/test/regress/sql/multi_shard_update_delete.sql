@@ -275,6 +275,18 @@ SET    value_1 = 3
 WHERE  user_id IN (SELECT user_id
               FROM   events_test_table);
 
+-- can use view instead of subquery
+CREATE VIEW events_view AS
+SELECT user_id, value_3 FROM events_test_table WHERE value_3 > 3;
+
+UPDATE users_test_table
+SET    value_1 = 3
+WHERE  user_id IN (SELECT user_id FROM events_view);
+
+-- we cannot update the view itself
+UPDATE events_view SET value_3 = 3;
+DROP VIEW events_view;
+
 DELETE FROM users_test_table
 WHERE  user_id IN (SELECT user_id
                    FROM events_test_table);

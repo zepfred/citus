@@ -555,6 +555,7 @@ ModifyQuerySupported(Query *queryTree, Query *originalQuery, bool multiShardQuer
 	uint32 rangeTableId = 1;
 	Var *partitionColumn = PartitionColumn(distributedTableId, rangeTableId);
 	List *rangeTableList = NIL;
+	RangeTblEntry *firstEntry = NULL;
 	ListCell *rangeTableCell = NULL;
 	uint32 queryTableCount = 0;
 	CmdType commandType = queryTree->commandType;
@@ -610,6 +611,15 @@ ModifyQuerySupported(Query *queryTree, Query *originalQuery, bool multiShardQuer
 	/* extract range table entries */
 	ExtractRangeTableEntryWalker((Node *) queryTree, &rangeTableList);
 
+	/* the first entry in the range table list is the RTE being modified */
+	firstEntry = linitial(rangeTableList);
+	if (firstEntry->rtekind == RTE_RELATION && firstEntry->relkind == RELKIND_VIEW)
+	{
+		return DeferredError(ERRCODE_FEATURE_NOT_SUPPORTED,
+							 "modifying a view on a distributed table is not supported",
+							 NULL, NULL);
+	}
+
 	foreach(rangeTableCell, rangeTableList)
 	{
 		RangeTblEntry *rangeTableEntry = (RangeTblEntry *) lfirst(rangeTableCell);
@@ -617,6 +627,16 @@ ModifyQuerySupported(Query *queryTree, Query *originalQuery, bool multiShardQuer
 		if (rangeTableEntry->rtekind == RTE_RELATION)
 		{
 			Oid relationId = rangeTableEntry->relid;
+
+			if (rangeTableEntry->relkind == RELKIND_VIEW)
+			{
+				/*
+				 * Views are replaced with subqueries, but leave behind an RTE.
+				 * We can ignore these RTEs in our error checks, since we'll still
+				 * check the RTEs in the subquery.
+				 */
+				continue;
+			}
 
 			if (!IsDistributedTable(relationId))
 			{
@@ -631,14 +651,6 @@ ModifyQuerySupported(Query *queryTree, Query *originalQuery, bool multiShardQuer
 			}
 
 			queryTableCount++;
-
-			/* we do not expect to see a view in modify query */
-			if (rangeTableEntry->relkind == RELKIND_VIEW)
-			{
-				return DeferredError(ERRCODE_FEATURE_NOT_SUPPORTED,
-									 "cannot modify views over distributed tables",
-									 NULL, NULL);
-			}
 		}
 		else if (rangeTableEntry->rtekind == RTE_VALUES)
 		{

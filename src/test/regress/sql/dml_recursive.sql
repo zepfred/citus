@@ -125,7 +125,7 @@ WHERE
 RETURNING
 	distributed_table.*;
 
--- we currently do not allow views in modification queries
+-- we allow views in modification queries
 UPDATE 
 	distributed_table 
 SET 

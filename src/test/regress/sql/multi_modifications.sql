@@ -522,12 +522,19 @@ INSERT INTO summary_table VALUES (2);
 
 SELECT * FROM summary_table ORDER BY id;
 
+-- update with subquery
 UPDATE summary_table SET average_value = average_query.average FROM (
 	SELECT avg(value) AS average FROM raw_table WHERE id = 1
 	) average_query
 WHERE id = 1;
 
 SELECT * FROM summary_table ORDER BY id;
+
+-- update with subquery in view
+CREATE VIEW average_view AS SELECT avg(value) AS average FROM raw_table WHERE id = 2;
+UPDATE summary_table SET average_value = average_view.average FROM average_view WHERE id = 2;
+SELECT * FROM summary_table ORDER BY id;
+DROP VIEW average_view;
 
 -- try different syntax
 UPDATE summary_table SET (min_value, average_value) =

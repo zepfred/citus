@@ -150,6 +150,7 @@ BuildGlobalWaitGraph(void)
 		if (!IsResponseOK(result))
 		{
 			ReportResultError(connection, result, WARNING);
+			PQclear(result);
 			continue;
 		}
 
@@ -160,6 +161,7 @@ BuildGlobalWaitGraph(void)
 		{
 			ereport(WARNING, (errmsg("unexpected number of columns from "
 									 "dump_local_wait_edges")));
+			PQclear(result);
 			continue;
 		}
 

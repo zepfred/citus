@@ -405,6 +405,7 @@ CitusDistStatActivity(const char *statQuery)
 		if (!IsResponseOK(result))
 		{
 			ReportResultError(connection, result, WARNING);
+			PQclear(result);
 			continue;
 		}
 
@@ -419,6 +420,7 @@ CitusDistStatActivity(const char *statQuery)
 			 */
 			ereport(WARNING, (errmsg("unexpected number of columns from "
 									 "citus stat query")));
+			PQclear(result);
 			continue;
 		}
 

@@ -756,6 +756,8 @@ MasterPartitionMethod(RangeVar *relation)
 	queryResult = GetRemoteCommandResult(masterConnection, raiseInterrupts);
 	Assert(!queryResult);
 
+	PQclear(queryResult);
+
 	return partitionMethod;
 }
 
@@ -1066,6 +1068,8 @@ RemoteFinalizedShardPlacementList(uint64 shardId)
 	PQclear(queryResult);
 	queryResult = GetRemoteCommandResult(masterConnection, raiseInterrupts);
 	Assert(!queryResult);
+
+	PQclear(queryResult);
 
 	return finalizedPlacementList;
 }
@@ -1825,6 +1829,7 @@ RemoteCreateEmptyShard(char *relationName)
 	PQclear(queryResult);
 	queryResult = GetRemoteCommandResult(masterConnection, raiseInterrupts);
 	Assert(!queryResult);
+	PQclear(queryResult);
 
 	return shardId;
 }
@@ -1874,6 +1879,7 @@ RemoteUpdateShardStatistics(uint64 shardId)
 	PQclear(queryResult);
 	queryResult = GetRemoteCommandResult(masterConnection, raiseInterrupts);
 	Assert(!queryResult);
+	PQclear(queryResult);
 }
 
 

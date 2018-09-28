@@ -528,6 +528,9 @@ FinishRemoteTransactionPrepare(struct MultiConnection *connection)
 		transaction->transactionState = REMOTE_TRANS_PREPARED;
 	}
 
+	/* reclaim remote command result */
+	PQclear(result);
+
 	/*
 	 * Try to consume results of PREPARE TRANSACTION command. If we don't
 	 * succeed, rollback the transaction. Note that we've not committed on

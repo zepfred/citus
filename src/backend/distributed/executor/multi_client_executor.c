@@ -547,6 +547,7 @@ MultiClientQueryResult(int32 connectionId, void **queryResult, int *rowCount,
 	{
 		ReportResultError(connection, result, WARNING);
 		PQclear(result);
+		ForgetResults(connection);
 
 		return false;
 	}

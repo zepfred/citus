@@ -287,6 +287,7 @@ get_global_active_transactions(PG_FUNCTION_ARGS)
 		if (!IsResponseOK(result))
 		{
 			ReportResultError(connection, result, WARNING);
+			PQclear(result);
 			continue;
 		}
 
@@ -298,6 +299,7 @@ get_global_active_transactions(PG_FUNCTION_ARGS)
 		{
 			ereport(WARNING, (errmsg("unexpected number of columns from "
 									 "get_all_active_transactions")));
+			PQclear(result);
 			continue;
 		}
 

@@ -863,7 +863,7 @@ TupleToGroupShardPlacement(TupleDesc tupleDescriptor, HeapTuple heapTuple)
  */
 void
 InsertShardRow(Oid relationId, uint64 shardId, char storageType,
-			   text *shardMinValue, text *shardMaxValue)
+			   text *shardMinValue, text *shardMaxValue, char *nodeCluster)
 {
 	Relation pgDistShard = NULL;
 	TupleDesc tupleDescriptor = NULL;
@@ -893,6 +893,10 @@ InsertShardRow(Oid relationId, uint64 shardId, char storageType,
 		isNulls[Anum_pg_dist_shard_shardminvalue - 1] = true;
 		isNulls[Anum_pg_dist_shard_shardmaxvalue - 1] = true;
 	}
+
+	Datum nodeClusterStringDatum = CStringGetDatum(nodeCluster);
+	Datum nodeClusterNameDatum = DirectFunctionCall1(namein, nodeClusterStringDatum);
+	values[Anum_pg_dist_shard_nodecluster - 1] = nodeClusterNameDatum;
 
 	/* open shard relation and insert new tuple */
 	pgDistShard = heap_open(DistShardRelationId(), RowExclusiveLock);

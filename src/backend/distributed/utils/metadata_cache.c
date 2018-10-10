@@ -1163,11 +1163,11 @@ BuildCachedShardList(DistTableCacheEntry *cacheEntry)
 		{
 			ereport(ERROR, (errmsg("hash partitioned table has uninitialized shards")));
 		}
-		if (cacheEntry->partitionMethod == DISTRIBUTE_BY_HASH &&
+		/*if (cacheEntry->partitionMethod == DISTRIBUTE_BY_HASH &&
 			cacheEntry->hasOverlappingShardInterval)
 		{
 			ereport(ERROR, (errmsg("hash partitioned table has overlapping shards")));
-		}
+		}*/
 	}
 
 
@@ -2677,7 +2677,7 @@ InitializeWorkerNodeCache(void)
 	HASHCTL info;
 	int hashFlags = 0;
 	long maxTableSize = (long) MaxWorkerNodesTracked;
-	bool includeNodesFromOtherClusters = false;
+	bool includeNodesFromOtherClusters = true;
 	int newWorkerNodeCount = 0;
 	WorkerNode **newWorkerNodeArray = NULL;
 	int workerNodeIndex = 0;

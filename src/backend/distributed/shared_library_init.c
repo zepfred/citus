@@ -881,7 +881,7 @@ RegisterCitusConfigVariables(void)
 		NULL,
 		&CurrentCluster,
 		"default",
-		PGC_SU_BACKEND,
+		PGC_USERSET,
 		0,
 		NULL, NULL, NULL);
 

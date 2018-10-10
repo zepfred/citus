@@ -105,6 +105,11 @@ CreateShardsWithRoundRobinPolicy(Oid distributedTableId, int32 shardCount,
 	DistTableCacheEntry *cacheEntry = DistributedTableCacheEntry(distributedTableId);
 	bool colocatedShard = false;
 	List *insertedShardPlacements = NIL;
+	List *regionBasedWorkerList = NIL;
+	ListCell *workerNodeCell = NULL;
+	ListCell *workerListCell = NULL;
+	List *regionNames = NIL;
+	ListCell *regionNamesCell = NULL;
 
 	/* make sure table is hash partitioned */
 	CheckHashPartitionedTable(distributedTableId);
@@ -167,71 +172,105 @@ CreateShardsWithRoundRobinPolicy(Oid distributedTableId, int32 shardCount,
 
 	/* load and sort the worker node list for deterministic placement */
 	workerNodeList = ActivePrimaryNodeList();
-	workerNodeList = SortList(workerNodeList, CompareWorkerNodes);
+
+	foreach(workerNodeCell, workerNodeList)
+	{
+		WorkerNode *workerNode = (WorkerNode *) lfirst(workerNodeCell);
+		List *newList = NIL;
+		bool isAdded = false;
+
+		foreach(workerListCell, regionBasedWorkerList)
+		{
+			List *currentList = (List *) lfirst(workerListCell);
+			WorkerNode *currentNode = (WorkerNode *) linitial(currentList);
+
+			// If the current node has the same nodecluster value with the current one
+			// add it to this batch
+			if(strcmp(currentNode->nodeCluster, workerNode->nodeCluster) == 0)
+			{
+				currentList = lappend(currentList, workerNode);
+				isAdded = true;
+			}
+		}
+
+		if (!isAdded)
+		{
+			regionNames = lappend(regionNames, workerNode->nodeCluster);
+			newList = lappend(newList,workerNode);
+			regionBasedWorkerList = lappend(regionBasedWorkerList, newList);
+		}
+	}
 
 	/* make sure we don't process cancel signals until all shards are created */
 	HOLD_INTERRUPTS();
 
-	workerNodeCount = list_length(workerNodeList);
-	if (replicationFactor > workerNodeCount)
-	{
-		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						errmsg("replication_factor (%d) exceeds number of worker nodes "
-							   "(%d)", replicationFactor, workerNodeCount),
-						errhint("Add more worker nodes or try again with a lower "
-								"replication factor.")));
-	}
-
-	/* if we have enough nodes, add an extra placement attempt for backup */
-	placementAttemptCount = (uint32) replicationFactor;
-	if (workerNodeCount > replicationFactor)
-	{
-		placementAttemptCount++;
-	}
-
 	/* set shard storage type according to relation type */
 	shardStorageType = ShardStorageType(distributedTableId);
 
-	for (shardIndex = 0; shardIndex < shardCount; shardIndex++)
+	forboth(regionNamesCell, regionNames, workerListCell, regionBasedWorkerList)
 	{
-		uint32 roundRobinNodeIndex = shardIndex % workerNodeCount;
+		List *workerNodeList = (List *) lfirst(workerListCell);
+		char *regionName = (char *) lfirst(regionNamesCell);
+		workerNodeList = SortList(workerNodeList, CompareWorkerNodes);
+		workerNodeCount = list_length(workerNodeList);
 
-		/* initialize the hash token space for this shard */
-		text *minHashTokenText = NULL;
-		text *maxHashTokenText = NULL;
-		int32 shardMinHashToken = INT32_MIN + (shardIndex * hashTokenIncrement);
-		int32 shardMaxHashToken = shardMinHashToken + (hashTokenIncrement - 1);
-		uint64 shardId = GetNextShardId();
-		List *currentInsertedShardPlacements = NIL;
-
-		/* if we are at the last shard, make sure the max token value is INT_MAX */
-		if (shardIndex == (shardCount - 1))
+		if (replicationFactor > workerNodeCount)
 		{
-			shardMaxHashToken = INT32_MAX;
+			ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+							errmsg("replication_factor (%d) exceeds number of worker nodes "
+								   "(%d)", replicationFactor, workerNodeCount),
+							errhint("Add more worker nodes or try again with a lower "
+									"replication factor.")));
 		}
 
-		/* insert the shard metadata row along with its min/max values */
-		minHashTokenText = IntegerToText(shardMinHashToken);
-		maxHashTokenText = IntegerToText(shardMaxHashToken);
+		/* if we have enough nodes, add an extra placement attempt for backup */
+		placementAttemptCount = (uint32) replicationFactor;
+		if (workerNodeCount > replicationFactor)
+		{
+			placementAttemptCount++;
+		}
 
-		/*
-		 * Grabbing the shard metadata lock isn't technically necessary since
-		 * we already hold an exclusive lock on the partition table, but we'll
-		 * acquire it for the sake of completeness. As we're adding new active
-		 * placements, the mode must be exclusive.
-		 */
-		LockShardDistributionMetadata(shardId, ExclusiveLock);
+		for (shardIndex = 0; shardIndex < shardCount; shardIndex++)
+		{
+			uint32 roundRobinNodeIndex = shardIndex % workerNodeCount;
 
-		InsertShardRow(distributedTableId, shardId, shardStorageType,
-					   minHashTokenText, maxHashTokenText);
+			/* initialize the hash token space for this shard */
+			text *minHashTokenText = NULL;
+			text *maxHashTokenText = NULL;
+			int32 shardMinHashToken = INT32_MIN + (shardIndex * hashTokenIncrement);
+			int32 shardMaxHashToken = shardMinHashToken + (hashTokenIncrement - 1);
+			uint64 shardId = GetNextShardId();
+			List *currentInsertedShardPlacements = NIL;
 
-		currentInsertedShardPlacements = InsertShardPlacementRows(distributedTableId,
-																  shardId,
-																  workerNodeList,
-																  roundRobinNodeIndex,
-																  replicationFactor);
-		insertedShardPlacements = list_concat(insertedShardPlacements,
-											  currentInsertedShardPlacements);
+			/* if we are at the last shard, make sure the max token value is INT_MAX */
+			if (shardIndex == (shardCount - 1))
+			{
+				shardMaxHashToken = INT32_MAX;
+			}
+
+			/* insert the shard metadata row along with its min/max values */
+			minHashTokenText = IntegerToText(shardMinHashToken);
+			maxHashTokenText = IntegerToText(shardMaxHashToken);
+
+			/*
+			 * Grabbing the shard metadata lock isn't technically necessary since
+			 * we already hold an exclusive lock on the partition table, but we'll
+			 * acquire it for the sake of completeness. As we're adding new active
+			 * placements, the mode must be exclusive.
+			 */
+			LockShardDistributionMetadata(shardId, ExclusiveLock);
+
+			InsertShardRow(distributedTableId, shardId, shardStorageType,
+						   minHashTokenText, maxHashTokenText, regionName);
+
+			currentInsertedShardPlacements = InsertShardPlacementRows(distributedTableId,
+																	  shardId,
+																	  workerNodeList,
+																	  roundRobinNodeIndex,
+																	  replicationFactor);
+			insertedShardPlacements = list_concat(insertedShardPlacements,
+												  currentInsertedShardPlacements);
+		}
 	}
 
 	CreateShardsOnWorkers(distributedTableId, insertedShardPlacements,
@@ -310,7 +349,7 @@ CreateColocatedShards(Oid targetRelationId, Oid sourceRelationId, bool
 		List *sourceShardPlacementList = ShardPlacementList(sourceShardId);
 
 		InsertShardRow(targetRelationId, newShardId, targetShardStorageType,
-					   shardMinValueText, shardMaxValueText);
+					   shardMinValueText, shardMaxValueText, sourceShardInterval->nodeCluster);
 
 		foreach(sourceShardPlacementCell, sourceShardPlacementList)
 		{
@@ -404,7 +443,7 @@ CreateReferenceTableShard(Oid distributedTableId)
 	LockShardDistributionMetadata(shardId, ExclusiveLock);
 
 	InsertShardRow(distributedTableId, shardId, shardStorageType, shardMinValue,
-				   shardMaxValue);
+				   shardMaxValue, "");
 
 	insertedShardPlacements = InsertShardPlacementRows(distributedTableId, shardId,
 													   workerNodeList, workerStartIndex,

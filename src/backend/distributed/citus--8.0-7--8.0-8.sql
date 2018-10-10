@@ -12,4 +12,6 @@ CREATE FUNCTION worker_drop_distributed_table(table_name text)
 COMMENT ON FUNCTION worker_drop_distributed_table(table_name text)
     IS 'drop the distributed table and its reference from metadata tables';
 
+ALTER TABLE pg_catalog.pg_dist_shard ADD COLUMN nodecluster name;
+
 RESET search_path;

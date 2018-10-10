@@ -990,13 +990,13 @@ AddNodeMetadata(char *nodeName, int32 nodePort, int32 groupId, char *nodeRack,
 		}
 	}
 
-	if (nodeRole == PrimaryNodeRoleId())
+	/*if (nodeRole == PrimaryNodeRoleId())
 	{
 		if (strncmp(nodeCluster, WORKER_DEFAULT_CLUSTER, WORKER_LENGTH) != 0)
 		{
 			ereport(ERROR, (errmsg("primaries must be added to the default cluster")));
 		}
-	}
+	}*/
 
 	/* generate the new node id from the sequence */
 	nextNodeIdInt = GetNextNodeId();

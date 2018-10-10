@@ -370,7 +370,7 @@ ConvertToReferenceTableMetadata(Oid relationId, uint64 shardId)
 	/* insert new metadata rows */
 	InsertIntoPgDistPartition(relationId, DISTRIBUTE_BY_NONE, distributionColumn,
 							  newColocationId, REPLICATION_MODEL_2PC);
-	InsertShardRow(relationId, shardId, shardStorageType, shardMinValue, shardMaxValue);
+	InsertShardRow(relationId, shardId, shardStorageType, shardMinValue, shardMaxValue,"");
 }
 
 

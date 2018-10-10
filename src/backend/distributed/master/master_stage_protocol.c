@@ -194,7 +194,7 @@ master_create_empty_shard(PG_FUNCTION_ARGS)
 		candidateNodeIndex++;
 	}
 
-	InsertShardRow(relationId, shardId, storageType, nullMinValue, nullMaxValue);
+	InsertShardRow(relationId, shardId, storageType, nullMinValue, nullMaxValue, "");
 
 	CreateAppendDistributedShardPlacements(relationId, shardId, candidateNodeList,
 										   ShardReplicationFactor);
@@ -779,7 +779,7 @@ UpdateShardStatistics(int64 shardId)
 	if (partitionType == DISTRIBUTE_BY_APPEND)
 	{
 		DeleteShardRow(shardId);
-		InsertShardRow(relationId, shardId, storageType, minValue, maxValue);
+		InsertShardRow(relationId, shardId, storageType, minValue, maxValue, "");
 	}
 
 	if (QueryCancelPending)

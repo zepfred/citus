@@ -381,7 +381,7 @@ ExecuteQueryIntoDestReceiver(Query *query, ParamListInfo params, DestReceiver *d
 
 /*
  * ExecuteIntoDestReceiver plans and executes a query and sends results to the given
- * DestReceiver.
+ * DestReceiver. TODO: Change the comment!
  */
 void
 ExecutePlanIntoDestReceiver(PlannedStmt *queryPlan, ParamListInfo params,

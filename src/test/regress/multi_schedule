@@ -25,6 +25,7 @@ test: multi_metadata_access
 test: multi_metadata_attributes
 
 test: multi_read_from_secondaries
+test: on_conflict_via_coordinator
 
 # ----------
 # The following distributed tests depend on creating a partitioned table and

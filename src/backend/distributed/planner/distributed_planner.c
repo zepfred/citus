@@ -68,6 +68,7 @@ static Node * ResolveExternalParams(Node *inputNode, ParamListInfo boundParams);
 
 static void AssignRTEIdentities(Query *queryTree);
 static void AssignRTEIdentity(RangeTblEntry *rangeTableEntry, int rteIdentifier);
+static void WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteRelation);
 static void AdjustPartitioningForDistributedPlanning(Query *parse,
 													 bool setPartitionedTablesInherited);
 static PlannedStmt * FinalizePlan(PlannedStmt *localPlan,
@@ -275,6 +276,7 @@ AssignRTEIdentities(Query *queryTree)
 {
 	List *rangeTableList = NIL;
 	ListCell *rangeTableCell = NULL;
+	Query *wrappedSubquery = NULL;
 	int rteIdentifier = 1;
 
 	/* extract range table entries for simple relations only */
@@ -296,6 +298,10 @@ AssignRTEIdentities(Query *queryTree)
 		if (rangeTableEntry->rtekind == RTE_RELATION)
 		{
 			AssignRTEIdentity(rangeTableEntry, rteIdentifier++);
+		}
+		if (rangeTableEntry->rtekind == RTE_FUNCTION)
+		{
+			WrapRteFunctionIntoRteSubquery(rangeTableEntry);
 		}
 	}
 }
@@ -1610,4 +1616,47 @@ HasUnresolvedExternParamsWalker(Node *expression, ParamListInfo boundParams)
 									  HasUnresolvedExternParamsWalker,
 									  boundParams);
 	}
+}
+
+
+/* Logic here is taken from WrapRteRelationIntoSubquery in query_colocation_checker.c
+ * TODO : import this properly or reformat to meet citus standards
+ *
+ * WrapRteRelationIntoSubquery wraps the given relation range table entry
+ * in a newly constructed "(SELECT * FROM table_name as anchor_relation)" query.
+ *
+ * Note that the query returned by this function does not contain any filters or
+ * projections. The returned query should be used cautiosly and it is mostly
+ * designed for generating a stub query.
+ */
+void
+WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteRelation)
+{
+	Query *subquery = makeNode(Query);
+	RangeTblRef *newRangeTableRef = makeNode(RangeTblRef);
+	RangeTblEntry *newRangeTableEntry = NULL;
+	Var *targetColumn = NULL;
+	TargetEntry *targetEntry = NULL;
+
+	subquery->commandType = CMD_SELECT;
+
+	/* we copy the input rteRelation to preserve the rteIdentity */
+	newRangeTableEntry = copyObject(rteRelation);
+	subquery->rtable = list_make1(newRangeTableEntry);
+
+	/* set the FROM expression to the subquery */
+	newRangeTableRef->rtindex = 1;
+	subquery->jointree = makeFromExpr(list_make1(newRangeTableRef), NULL);
+
+	/* Need the whole row as a junk var */
+	targetColumn = makeWholeRowVar(newRangeTableEntry, newRangeTableRef->rtindex, 0,
+								   false);
+
+	/* create a dummy target entry */
+	targetEntry = makeTargetEntry((Expr *) targetColumn, 1, "wholerow", true);
+
+	subquery->targetList = lappend(subquery->targetList, targetEntry);
+
+	rteRelation->rtekind = RTE_SUBQUERY;
+	rteRelation->subquery = subquery;
 }

@@ -276,7 +276,6 @@ AssignRTEIdentities(Query *queryTree)
 {
 	List *rangeTableList = NIL;
 	ListCell *rangeTableCell = NULL;
-	Query *wrappedSubquery = NULL;
 	int rteIdentifier = 1;
 
 	/* extract range table entries for simple relations only */

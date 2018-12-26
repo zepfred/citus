@@ -68,7 +68,12 @@ static Node * ResolveExternalParams(Node *inputNode, ParamListInfo boundParams);
 
 static void AssignRTEIdentities(Query *queryTree);
 static void AssignRTEIdentity(RangeTblEntry *rangeTableEntry, int rteIdentifier);
-static void WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteRelation);
+
+static void WrapRTEFunctionsInQuery(Query *query);
+static void WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction);
+static bool ShouldWrapFunctionsInQuery(Query *query);
+static void WrapFunctionsInQuery(Query *query);
+
 static void AdjustPartitioningForDistributedPlanning(Query *parse,
 													 bool setPartitionedTablesInherited);
 static PlannedStmt * FinalizePlan(PlannedStmt *localPlan,
@@ -128,6 +133,7 @@ distributed_planner(Query *parse, int cursorOptions, ParamListInfo boundParams)
 		 * distributed query.
 		 */
 		AssignRTEIdentities(parse);
+		WrapRTEFunctionsInQuery(parse);
 		originalQuery = copyObject(parse);
 
 		setPartitionedTablesInherited = false;
@@ -298,11 +304,112 @@ AssignRTEIdentities(Query *queryTree)
 		{
 			AssignRTEIdentity(rangeTableEntry, rteIdentifier++);
 		}
+	}
+}
+
+
+/*
+ * WrapRTEFunctionsInQuery handles function calls in joins. To ensure the
+ * function calls are run on the coordinator, we find those function calls
+ * that are used in joins and wrap them in (SELECT * FROM function())
+ * subqueries.
+ * */
+static void
+WrapRTEFunctionsInQuery(Query *query)
+{
+	List *subqueryList = NIL;
+	ListCell *subqueryCell = NULL;
+
+/*	Get the list of all queries & subqueries in the original query */
+	ExtractQueryWalker((Node *) query, &subqueryList);
+
+	foreach(subqueryCell, subqueryList)
+	{
+		Query *subquery = (Query *) lfirst(subqueryCell);
+		if (ShouldWrapFunctionsInQuery(subquery))
+		{
+			WrapFunctionsInQuery(subquery);
+		}
+	}
+}
+
+
+static bool
+ShouldWrapFunctionsInQuery(Query *query)
+{
+	/* there needs to be at least two RTEs for a join operation */
+	if (list_length(query->rtable) > 1)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+
+/*
+ * WrapFunctionsInQuery iterates over immediate RTEs of a query and mutates
+ * those RTE functions by wrapping them in (SELECT * FROM function())
+ * subqueries.
+ */
+static void
+WrapFunctionsInQuery(Query *query)
+{
+	List *rangeTableList = query->rtable;
+	ListCell *rangeTableCell = NULL;
+
+	foreach(rangeTableCell, rangeTableList)
+	{
+		RangeTblEntry *rangeTableEntry = (RangeTblEntry *) lfirst(rangeTableCell);
+
 		if (rangeTableEntry->rtekind == RTE_FUNCTION)
 		{
 			WrapRteFunctionIntoRteSubquery(rangeTableEntry);
 		}
 	}
+}
+
+
+/*
+ * WrapRteFunctionIntoRteSubquery wraps the given function range table entry
+ * in a newly constructed "(SELECT * FROM function())" subquery.
+ */
+void
+WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
+{
+	Query *subquery = makeNode(Query);
+	RangeTblRef *newRangeTableRef = makeNode(RangeTblRef);
+	RangeTblEntry *newRangeTableEntry = NULL;
+	Var *targetColumn = NULL;
+	TargetEntry *targetEntry = NULL;
+
+	subquery->commandType = CMD_SELECT;
+
+	/* we copy the input rteFunction to preserve the rteIdentity */
+	newRangeTableEntry = copyObject(rteFunction);
+
+
+	/* set the FROM expression to the subquery */
+	subquery->rtable = list_make1(newRangeTableEntry);
+	newRangeTableRef->rtindex = 1;
+	subquery->jointree = makeFromExpr(list_make1(newRangeTableRef), NULL);
+
+/*	TODO: Properly Select all columns of the function */
+
+	/* Need the whole row as a NON junk var */
+	targetColumn = makeWholeRowVar(newRangeTableEntry,
+								   (Index) newRangeTableRef->rtindex, 0,
+								   true);
+
+	/* create a target entry */
+	targetEntry = makeTargetEntry((Expr *) targetColumn, 1, "n", false);
+
+	subquery->targetList = lappend(subquery->targetList, targetEntry);
+
+	rteFunction->rtekind = RTE_SUBQUERY;
+	rteFunction->subquery = subquery;
 }
 
 
@@ -1615,47 +1722,4 @@ HasUnresolvedExternParamsWalker(Node *expression, ParamListInfo boundParams)
 									  HasUnresolvedExternParamsWalker,
 									  boundParams);
 	}
-}
-
-
-/* Logic here is taken from WrapRteRelationIntoSubquery in query_colocation_checker.c
- * TODO : import this properly or reformat to meet citus standards
- *
- * WrapRteRelationIntoSubquery wraps the given relation range table entry
- * in a newly constructed "(SELECT * FROM table_name as anchor_relation)" query.
- *
- * Note that the query returned by this function does not contain any filters or
- * projections. The returned query should be used cautiosly and it is mostly
- * designed for generating a stub query.
- */
-void
-WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteRelation)
-{
-	Query *subquery = makeNode(Query);
-	RangeTblRef *newRangeTableRef = makeNode(RangeTblRef);
-	RangeTblEntry *newRangeTableEntry = NULL;
-	Var *targetColumn = NULL;
-	TargetEntry *targetEntry = NULL;
-
-	subquery->commandType = CMD_SELECT;
-
-	/* we copy the input rteRelation to preserve the rteIdentity */
-	newRangeTableEntry = copyObject(rteRelation);
-	subquery->rtable = list_make1(newRangeTableEntry);
-
-	/* set the FROM expression to the subquery */
-	newRangeTableRef->rtindex = 1;
-	subquery->jointree = makeFromExpr(list_make1(newRangeTableRef), NULL);
-
-	/* Need the whole row as a junk var */
-	targetColumn = makeWholeRowVar(newRangeTableEntry, newRangeTableRef->rtindex, 0,
-								   false);
-
-	/* create a dummy target entry */
-	targetEntry = makeTargetEntry((Expr *) targetColumn, 1, "wholerow", true);
-
-	subquery->targetList = lappend(subquery->targetList, targetEntry);
-
-	rteRelation->rtekind = RTE_SUBQUERY;
-	rteRelation->subquery = subquery;
 }

@@ -386,6 +386,7 @@ WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
 	TargetEntry *targetEntry = NULL;
 	List *functionColnames = rteFunction->eref->colnames;
 	ListCell *functionColname = NULL;
+	int resno = 1;
 
 	subquery->commandType = CMD_SELECT;
 
@@ -406,7 +407,6 @@ WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
 								   true);
 
 /*	Create target entries for all columns returned by the function */
-	int resno = 1;
 	foreach(functionColname, functionColnames)
 	{
 		Value *colnameValue = lfirst(functionColname);

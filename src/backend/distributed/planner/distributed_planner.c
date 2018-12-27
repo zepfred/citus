@@ -384,10 +384,12 @@ WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
 	RangeTblEntry *newRangeTableEntry = NULL;
 	Var *targetColumn = NULL;
 	TargetEntry *targetEntry = NULL;
+	List *functionColnames = rteFunction->eref->colnames;
+	ListCell *functionColname = NULL;
 
 	subquery->commandType = CMD_SELECT;
 
-	/* we copy the input rteFunction to preserve the rteIdentity */
+	/* we copy the input rteFunction to prevent cycles */
 	newRangeTableEntry = copyObject(rteFunction);
 
 
@@ -403,10 +405,16 @@ WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
 								   (Index) newRangeTableRef->rtindex, 0,
 								   true);
 
-	/* create a target entry */
-	targetEntry = makeTargetEntry((Expr *) targetColumn, 1, "n", false);
+/*	Create target entries for all columns returned by the function */
+	foreach(functionColname, functionColnames)
+	{
+		Value *colnameValue = lfirst(functionColname);
+		char *colnameString = colnameValue->val.str;
 
-	subquery->targetList = lappend(subquery->targetList, targetEntry);
+		targetEntry = makeTargetEntry((Expr *) targetColumn, 1,
+									  colnameString, false);
+		subquery->targetList = lappend(subquery->targetList, targetEntry);
+	}
 
 	rteFunction->rtekind = RTE_SUBQUERY;
 	rteFunction->subquery = subquery;

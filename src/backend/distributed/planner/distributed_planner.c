@@ -406,12 +406,13 @@ WrapRteFunctionIntoRteSubquery(RangeTblEntry *rteFunction)
 								   true);
 
 /*	Create target entries for all columns returned by the function */
+	int resno = 1;
 	foreach(functionColname, functionColnames)
 	{
 		Value *colnameValue = lfirst(functionColname);
 		char *colnameString = colnameValue->val.str;
 
-		targetEntry = makeTargetEntry((Expr *) targetColumn, 1,
+		targetEntry = makeTargetEntry((Expr *) targetColumn, resno++,
 									  colnameString, false);
 		subquery->targetList = lappend(subquery->targetList, targetEntry);
 	}

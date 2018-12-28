@@ -591,6 +591,7 @@ DEBUG:  Plan is router executable
 
 -- they are supported via (sub)query pushdown if multiple workers are involved
 SELECT * FROM articles_hash, position('om' in 'Thomas') WHERE author_id = 1 or author_id = 2 ORDER BY 4 DESC, 1 DESC, 2 DESC LIMIT 5;
+DEBUG:  Wrapping a function in a subquery
 DEBUG:  push down of limit count: 5
  id | author_id |   title    | word_count | position 
 ----+-----------+------------+------------+----------

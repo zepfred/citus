@@ -1360,8 +1360,6 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	List *functionColumnNames = NULL;
 	char *columnName = NULL;
 
-	ereport(DEBUG1, (errmsg("Wrapping a function in a subquery")));
-
 	subquery->commandType = CMD_SELECT;
 
 	/* copy the input rangeTblEntry to prevent cycles */

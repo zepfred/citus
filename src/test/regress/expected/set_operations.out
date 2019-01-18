@@ -496,7 +496,6 @@ DEBUG:  Plan 95 query after replacing subqueries and CTEs: SELECT u.x, u.y, test
 
 -- a join between a set operation and a generate_series which is pushdownable
  SELECT * FROM ((SELECT * FROM test) UNION (SELECT * FROM test ORDER BY x)) u JOIN generate_series(1,10) x USING (x) ORDER BY 1,2;
-DEBUG:  Wrapping a function in a subquery
  x | y 
 ---+---
  1 | 1
@@ -505,7 +504,6 @@ DEBUG:  Wrapping a function in a subquery
 
 -- a join between a set operation and a generate_series which is not pushdownable due to EXCEPT
  SELECT * FROM ((SELECT * FROM test) EXCEPT (SELECT * FROM test ORDER BY x)) u JOIN generate_series(1,10) x USING (x) ORDER BY 1,2;
-DEBUG:  Wrapping a function in a subquery
 DEBUG:  generating subplan 100_1 for subquery SELECT x, y FROM recursive_union.test
 DEBUG:  generating subplan 100_2 for subquery SELECT x, y FROM recursive_union.test ORDER BY x
 DEBUG:  Creating router plan

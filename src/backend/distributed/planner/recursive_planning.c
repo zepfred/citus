@@ -1357,6 +1357,8 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	Var *targetColumn = NULL;
 	TargetEntry *targetEntry = NULL;
 	RangeTblFunction *rangeTblFunction = NULL;
+	int targetColumnIndex = 0;
+	TupleDesc tupleDesc = NULL;
 
 	rangeTblFunction = linitial(rangeTblEntry->functions);
 
@@ -1375,19 +1377,17 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	 * If function return type is not composite or rowtype can't be determined,
 	 * tupleDesc is set to null here
 	 */
-	TupleDesc tupleDesc = get_expr_result_tupdesc(rangeTblFunction->funcexpr,
-												  true);
+	tupleDesc = get_expr_result_tupdesc(rangeTblFunction->funcexpr, true);
 
 	/* if tupleDesc is not null, we iterate over all the attributes and
 	 * create targetEntries*/
 	if (tupleDesc)
 	{
-		ereport(LOG, (errmsg("Got one tuple description"),
-					  errdetail("has %d elements", tupleDesc->natts)));
-
-		for (int i = 0; i < tupleDesc->natts; i++)
+		for (targetColumnIndex = 0; targetColumnIndex < tupleDesc->natts;
+			 targetColumnIndex++)
 		{
-			FormData_pg_attribute *attribute = TupleDescAttr(tupleDesc, i);
+			FormData_pg_attribute *attribute = TupleDescAttr(tupleDesc,
+															 targetColumnIndex);
 			Oid columnType = attribute->atttypid;
 			char *columnName = attribute->attname.data;
 
@@ -1396,8 +1396,10 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 			 *
 			 * varattno=0 corresponds to whole row
 			 * varattno=1 corrensponds to first column that is stored in tupDesc->attrs[0] */
-			targetColumn = makeVar(1, i + 1, columnType, -1, InvalidOid, 0);
-			targetEntry = makeTargetEntry((Expr *) targetColumn, i + 1, columnName,
+			targetColumn = makeVar(1, targetColumnIndex + 1, columnType, -1, InvalidOid,
+								   0);
+			targetEntry = makeTargetEntry((Expr *) targetColumn, targetColumnIndex + 1,
+										  columnName,
 										  false);
 			subquery->targetList = lappend(subquery->targetList, targetEntry);
 		}
@@ -1416,7 +1418,6 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 		/* create target entries for all columns returned by the function */
 		List *functionColumnNames = NULL;
 		ListCell *functionColumnName = NULL;
-		int targetColumnIndex = 0;
 
 		functionColumnNames = rangeTblEntry->eref->colnames;
 		foreach(functionColumnName, functionColumnNames)
@@ -1479,7 +1480,7 @@ ShouldTransformRTE(RangeTblEntry *rangeTableEntry)
 		return false;
 	}
 
-	/* We do not want to wrap readintermediateresult function calls */
+	/* We do not want to wrap read-intermediate-result function calls */
 	if (ContainsReadIntermediateResultFunction(linitial(rangeTableEntry->functions)))
 	{
 		return false;

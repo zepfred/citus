@@ -94,7 +94,7 @@ WITH next_row_to_process AS (
 SELECT *
 FROM table1, next_row_to_process
 WHERE table1.data <= next_row_to_process.data
-ORDER BY id ASC;
+ORDER BY 1,2 ASC;
 
 -- Multiple functions in an RTE
 SELECT * FROM ROWS FROM (next_k_integers(5), next_k_integers(10)) AS f(a, b),

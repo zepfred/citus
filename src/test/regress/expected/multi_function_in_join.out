@@ -120,8 +120,6 @@ SELECT f.* FROM dup(42) f;
 (1 row)
 
 SELECT f.* FROM table1 t JOIN dup(32) f ON (f1 = id);
-LOG:  Got one tuple description
-DETAIL:  has 2 elements
 DEBUG:  generating subplan 7_1 for subquery SELECT f1, f2 FROM functions_in_joins.dup(32) f(f1, f2)
 DEBUG:  Plan 7 query after replacing subqueries and CTEs: SELECT f.f1, f.f2 FROM (functions_in_joins.table1 t JOIN (SELECT intermediate_result.f1, intermediate_result.f2 FROM read_intermediate_result('7_1'::text, 'binary'::citus_copy_format) intermediate_result(f1 integer, f2 text)) f ON ((f.f1 OPERATOR(pg_catalog.=) t.id)))
  f1 |     f2     
@@ -154,8 +152,6 @@ SELECT * from generate_series(1,3) g(x) JOIN LATERAL dup(x) f ON (f1 = x);
 (3 rows)
 
 SELECT *, d.* FROM table1 JOIN dup(42) d ON (id = f1);
-LOG:  Got one tuple description
-DETAIL:  has 2 elements
 DEBUG:  generating subplan 9_1 for subquery SELECT f1, f2 FROM functions_in_joins.dup(42) d(f1, f2)
 DEBUG:  Plan 9 query after replacing subqueries and CTEs: SELECT table1.id, table1.data, d.f1, d.f2, d.f1, d.f2 FROM (functions_in_joins.table1 JOIN (SELECT intermediate_result.f1, intermediate_result.f2 FROM read_intermediate_result('9_1'::text, 'binary'::citus_copy_format) intermediate_result(f1 integer, f2 text)) d ON ((table1.id OPERATOR(pg_catalog.=) d.f1)))
  id | data | f1 |     f2     | f1 |     f2     
@@ -188,15 +184,22 @@ WITH next_row_to_process AS (
 SELECT *
 FROM table1, next_row_to_process
 WHERE table1.data <= next_row_to_process.data
-ORDER BY id ASC;
-ERROR:  ORDER BY "id" is ambiguous
-LINE 7: ORDER BY id ASC;
-                 ^
+ORDER BY 1,2 ASC;
+DEBUG:  generating subplan 13_1 for CTE next_row_to_process: SELECT table1.id, table1.data, n.n FROM (functions_in_joins.table1 JOIN nextval('functions_in_joins.numbers'::regclass) n(n) ON ((table1.id OPERATOR(pg_catalog.=) n.n)))
+DEBUG:  generating subplan 14_1 for subquery SELECT n FROM nextval('functions_in_joins.numbers'::regclass) n(n)
+DEBUG:  Plan 14 query after replacing subqueries and CTEs: SELECT table1.id, table1.data, n.n FROM (functions_in_joins.table1 JOIN (SELECT intermediate_result.n FROM read_intermediate_result('14_1'::text, 'binary'::citus_copy_format) intermediate_result(n bigint)) n ON ((table1.id OPERATOR(pg_catalog.=) n.n)))
+DEBUG:  Plan 13 query after replacing subqueries and CTEs: SELECT table1.id, table1.data, next_row_to_process.id, next_row_to_process.data, next_row_to_process.n FROM functions_in_joins.table1, (SELECT intermediate_result.id, intermediate_result.data, intermediate_result.n FROM read_intermediate_result('13_1'::text, 'binary'::citus_copy_format) intermediate_result(id integer, data integer, n bigint)) next_row_to_process WHERE (table1.data OPERATOR(pg_catalog.<=) next_row_to_process.data) ORDER BY table1.id, table1.data
+ id | data | id | data | n 
+----+------+----+------+---
+  1 |    1 |  2 |    4 | 2
+  2 |    4 |  2 |    4 | 2
+(2 rows)
+
 -- Multiple functions in an RTE
 SELECT * FROM ROWS FROM (next_k_integers(5), next_k_integers(10)) AS f(a, b),
     table1 WHERE id = a ORDER BY id ASC;
-DEBUG:  generating subplan 13_1 for subquery SELECT a, b FROM ROWS FROM(functions_in_joins.next_k_integers(5), functions_in_joins.next_k_integers(10)) f(a, b)
-DEBUG:  Plan 13 query after replacing subqueries and CTEs: SELECT f.a, f.b, table1.id, table1.data FROM (SELECT intermediate_result.a, intermediate_result.b FROM read_intermediate_result('13_1'::text, 'binary'::citus_copy_format) intermediate_result(a integer, b integer)) f(a, b), functions_in_joins.table1 WHERE (table1.id OPERATOR(pg_catalog.=) f.a) ORDER BY table1.id
+DEBUG:  generating subplan 15_1 for subquery SELECT a, b FROM ROWS FROM(functions_in_joins.next_k_integers(5), functions_in_joins.next_k_integers(10)) f(a, b)
+DEBUG:  Plan 15 query after replacing subqueries and CTEs: SELECT f.a, f.b, table1.id, table1.data FROM (SELECT intermediate_result.a, intermediate_result.b FROM read_intermediate_result('15_1'::text, 'binary'::citus_copy_format) intermediate_result(a integer, b integer)) f(a, b), functions_in_joins.table1 WHERE (table1.id OPERATOR(pg_catalog.=) f.a) ORDER BY table1.id
  a | b  | id | data 
 ---+----+----+------
  5 | 10 |  5 |   25

@@ -1377,7 +1377,8 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	 * If function return type is not composite or rowtype can't be determined,
 	 * tupleDesc is set to null here
 	 */
-	tupleDesc = get_expr_result_tupdesc(rangeTblFunction->funcexpr, true);
+	tupleDesc = (TupleDesc) get_expr_result_tupdesc(rangeTblFunction->funcexpr,
+													true);
 
 	/* if tupleDesc is not null, we iterate over all the attributes and
 	 * create targetEntries*/

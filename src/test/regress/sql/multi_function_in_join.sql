@@ -68,16 +68,7 @@ CREATE FUNCTION dup(int) RETURNS TABLE(f1 int, f2 text)
 AS $$ SELECT $1, CAST($1 AS text) || ' is text' $$
 LANGUAGE SQL;
 
-SELECT dup(42);
-SELECT * FROM dup(42);
-SELECT f.* FROM dup(42) f;
-
 SELECT f.* FROM table1 t JOIN dup(32) f ON (f1 = id);
-SELECT f.* FROM table1 t JOIN (SELECT f_1.* FROM dup(32) f_1) f ON (f1 = id);
-
-SELECT *, f.* from generate_series(1,3) g(x) JOIN LATERAL dup(x) f ON (f1 = x);
-SELECT * from generate_series(1,3) g(x) JOIN LATERAL dup(x) f ON (f1 = x);
-SELECT *, d.* FROM table1 JOIN dup(42) d ON (id = f1);
 
 -- a stable function
 CREATE OR REPLACE FUNCTION the_minimum_id()

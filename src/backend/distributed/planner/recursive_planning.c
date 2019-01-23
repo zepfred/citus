@@ -164,7 +164,7 @@ static bool CteReferenceListWalker(Node *node, CteReferenceWalkerContext *contex
 static bool ContainsReferencesToOuterQuery(Query *query);
 static bool ContainsReferencesToOuterQueryWalker(Node *node,
 												 VarLevelsUpWalkerContext *context);
-static void WrapFunctionsInQuery(Query *query);
+static void WrapFunctionsInSubqueries(Query *query);
 static void TransformFunctionRTE(RangeTblEntry *rangeTblEntry);
 static bool ShouldTransformRTE(RangeTblEntry *rangeTableEntry);
 
@@ -268,7 +268,7 @@ RecursivelyPlanSubqueriesAndCTEs(Query *query, RecursivePlanningContext *context
 	}
 
 	/* make sure function calls in joins are executed in the coordinator */
-	WrapFunctionsInQuery(query);
+	WrapFunctionsInSubqueries(query);
 
 	/* descend into subqueries */
 	query_tree_walker(query, RecursivelyPlanSubqueryWalker, context, 0);
@@ -1313,14 +1313,14 @@ ContainsReferencesToOuterQueryWalker(Node *node, VarLevelsUpWalkerContext *conte
 
 
 /*
- * WrapFunctionsInQuery iterates over all the immediate Range Table Entries
+ * WrapFunctionsInSubqueries iterates over all the immediate Range Table Entries
  * of a query and wraps the functions inside (SELECT * FROM fnc() f) subqueries.
  *
  * We currently wrap only those functions that return a single value. If a
  * function returns records or a table we leave it as it is
  * */
 static void
-WrapFunctionsInQuery(Query *query)
+WrapFunctionsInSubqueries(Query *query)
 {
 	List *rangeTableList = query->rtable;
 	ListCell *rangeTableCell = NULL;
@@ -1482,7 +1482,7 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 				columnType = funcExpr->funcresulttype;
 			}
 
-			/* Noe that the column k is associated with varattno/resno of k+1 */
+			/* Note that the column k is associated with varattno/resno of k+1 */
 			targetColumn = makeVar(1, targetColumnIndex + 1, columnType, -1,
 								   InvalidOid, 0);
 			targetEntry = makeTargetEntry((Expr *) targetColumn,
@@ -1503,33 +1503,22 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
  * ShouldTransformRTE determines whether a given RTE should bne wrapped in a
  * subquery.
  *
- * Not all functions can be wrapped in a subquery for now. As we support more
+ * Not all functions should be wrapped in a subquery for now. As we support more
  * functions to be used in joins, the constraints here will be relaxed.
  * */
 static bool
 ShouldTransformRTE(RangeTblEntry *rangeTableEntry)
 {
-	/* wrap only function rtes */
-	if (rangeTableEntry->rtekind != RTE_FUNCTION)
-	{
-		return false;
-	}
-
 	/*
-	 * TODO: remove this check once lateral joins are supported
-	 * We do not support WITH CARDINALITY and JOIN LATERAL on functions for now
+	 * We should wrap only function rtes that are not LATERAL and
+	 * without WITH CARDINALITY clause
 	 * */
-	if (rangeTableEntry->lateral || rangeTableEntry->funcordinality)
+	if (rangeTableEntry->rtekind != RTE_FUNCTION ||
+		rangeTableEntry->lateral ||
+		rangeTableEntry->funcordinality)
 	{
 		return false;
 	}
-
-	/* We do not want to wrap read-intermediate-result function calls */
-	if (ContainsReadIntermediateResultFunction(linitial(rangeTableEntry->functions)))
-	{
-		return false;
-	}
-
 	return true;
 }
 

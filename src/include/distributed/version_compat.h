@@ -146,7 +146,7 @@ canonicalize_qual_compat(Expr *qual, bool is_check)
  * 2. TYPEFUNC_COMPOSITE_DOMAIN is introduced in PG11, and references to this
  * macro is removed
  * */
-static TupleDesc
+static inline TupleDesc
 get_expr_result_tupdesc(Node *expr, bool noError)
 {
 	TupleDesc tupleDesc;

@@ -92,6 +92,24 @@ SELECT * FROM ROWS FROM (next_k_integers(5), next_k_integers(10)) AS f(a, b),
     table1 WHERE id = a ORDER BY id ASC;
 
 
+-- Custom Type returning function used in a join
+CREATE TYPE min_and_max AS (
+  minimum INT,
+  maximum INT
+);
+
+CREATE OR REPLACE FUNCTION max_and_min () RETURNS
+  min_and_max AS $$
+DECLARE
+  result min_and_max%rowtype;
+begin
+  select into result min(data) as minimum, max(data) as maximum from table1;
+  return result;
+end;
+$$ language plpgsql;
+
+SELECT * FROM table1 JOIN max_and_min() m ON (m.maximum = data OR m.minimum = data);
+
 -- The following tests will fail as we do not support  all joins on
 -- all kinds of functions
 SET client_min_messages TO ERROR;

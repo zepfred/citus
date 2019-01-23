@@ -1358,7 +1358,7 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	Var *targetColumn = NULL;
 	TargetEntry *targetEntry = NULL;
 	RangeTblFunction *rangeTblFunction = NULL;
-	int targetColumnIndex = 0;
+	AttrNumber targetColumnIndex = 0;
 	TupleDesc tupleDesc = NULL;
 
 	rangeTblFunction = linitial(rangeTblEntry->functions);
@@ -1381,10 +1381,20 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 	tupleDesc = (TupleDesc) get_expr_result_tupdesc(rangeTblFunction->funcexpr,
 													true);
 
-	/* if tupleDesc is not null, we iterate over all the attributes and
-	 * create targetEntries*/
+	/*
+	 * If tupleDesc is not null, we iterate over all the attributes and
+	 * create targetEntries
+	 * */
 	if (tupleDesc)
 	{
+		/*
+		 * A sample function join that end up here:
+		 *
+		 * CREATE FUNCTION f(..) RETURNS TABLE(c1 int, c2 text) AS .. ;
+		 * SELECT .. FROM table JOIN f(..) ON ( .. ) ;
+		 *
+		 * We will iterate over Tuple Description attributes. i.e (c1 int, c2 text)
+		 */
 		for (targetColumnIndex = 0; targetColumnIndex < tupleDesc->natts;
 			 targetColumnIndex++)
 		{
@@ -1397,7 +1407,7 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 			 * The indexing of attributes and TupleDesc and varattno differ
 			 *
 			 * varattno=0 corresponds to whole row
-			 * varattno=1 corrensponds to first column that is stored in tupDesc->attrs[0] */
+			 * varattno=1 corresponds to first column that is stored in tupDesc->attrs[0] */
 			targetColumn = makeVar(1, targetColumnIndex + 1, columnType, -1, InvalidOid,
 								   0);
 			targetEntry = makeTargetEntry((Expr *) targetColumn, targetColumnIndex + 1,
@@ -1407,13 +1417,13 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 		}
 	}
 	/*
-	 * If tupleDesc is NULL we have several cases:
+	 * If tupleDesc is NULL we have 2 different cases:
 	 *
 	 * 1. The function returns a record but the attributes can not be
-	 * determined before running the query. In this case the column names and
-	 * types must be defined explicitly in the query
+	 * determined just by looking at the function definition. In this case the
+	 * column names and types must be defined explicitly in the query
 	 *
-	 * 2. The function returns a non-composite type
+	 * 2. The function returns a non-composite type (e.g. int, text, jsonb ..)
 	 * */
 	else
 	{
@@ -1427,24 +1437,56 @@ TransformFunctionRTE(RangeTblEntry *rangeTblEntry)
 			char *columnName = strVal(lfirst(functionColumnName));
 			Oid columnType = InvalidOid;
 
-			/* use explicitly defined types in the query if they are available */
+			/*
+			 * If the function returns a set of records, the query needs
+			 * to explicitly name column names and types
+			 *
+			 * Use explicitly defined types in the query if they are
+			 * available
+			 * */
 			if (list_length(rangeTblFunction->funccoltypes) > 0)
 			{
+				/*
+				 * A sample function join that end up here:
+				 *
+				 * CREATE FUNCTION get_set_of_records() RETURNS SETOF RECORD AS
+				 * $cmd$
+				 * SELECT x, x+1 FROM generate_series(0,4) f(x)
+				 * $cmd$
+				 * LANGUAGE SQL;
+				 *
+				 * SELECT *
+				 * FROM table1 JOIN get_set_of_records() AS t2(x int, y int)
+				 * ON (id = x);
+				 *
+				 * Note that the function definition does not have column
+				 * names and types. Therefore the user needs to explicitly
+				 * state them in the query
+				 * */
 				columnType = list_nth_oid(rangeTblFunction->funccoltypes,
 										  targetColumnIndex);
 			}
 			/* use the types in the function definition otherwise */
 			else
 			{
+				/*
+				 * Only functions returning simple types end up here.
+				 * A sample function:
+				 *
+				 * CREATE FUNCTION add(integer, integer) RETURNS integer AS
+				 * 'SELECT $1 + $2;'
+				 * LANGUAGE SQL;
+				 * SELECT * FROM table JOIN add(3,5) sum ON ( .. ) ;
+				 * */
 				FuncExpr *funcExpr = (FuncExpr *) rangeTblFunction->funcexpr;
 				columnType = funcExpr->funcresulttype;
 			}
 
+			/* Noe that the column k is associated with varattno/resno of k+1 */
 			targetColumn = makeVar(1, targetColumnIndex + 1, columnType, -1,
 								   InvalidOid, 0);
 			targetEntry = makeTargetEntry((Expr *) targetColumn,
-										  targetColumnIndex + 1, columnName,
-										  false);
+										  targetColumnIndex + 1, columnName, false);
 			subquery->targetList = lappend(subquery->targetList, targetEntry);
 
 			targetColumnIndex++;
@@ -1475,9 +1517,9 @@ ShouldTransformRTE(RangeTblEntry *rangeTableEntry)
 
 	/*
 	 * TODO: remove this check once lateral joins are supported
-	 * We do not support lateral joins on functions for now, as referencing
-	 * columns of an outer query is quite tricky */
-	if (rangeTableEntry->lateral)
+	 * We do not support WITH CARDINALITY and JOIN LATERAL on functions for now
+	 * */
+	if (rangeTableEntry->lateral || rangeTableEntry->funcordinality)
 	{
 		return false;
 	}

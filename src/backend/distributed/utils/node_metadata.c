@@ -30,6 +30,7 @@
 #include "distributed/multi_router_planner.h"
 #include "distributed/pg_dist_node.h"
 #include "distributed/reference_table_utils.h"
+#include "distributed/remote_commands.h"
 #include "distributed/resource_lock.h"
 #include "distributed/shardinterval_utils.h"
 #include "distributed/worker_manager.h"
@@ -70,6 +71,9 @@ static void DeleteNodeRow(char *nodename, int32 nodeport);
 static List * ParseWorkerNodeFileAndRename(void);
 static WorkerNode * TupleToWorkerNode(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static void UpdateNodeLocation(int32 nodeId, char *newNodeName, int32 newNodePort);
+
+static List * DistSchemaUniqueOidList(void);
+static void ReplicateAllSchemaNamesToNode(char *nodeName, int nodePort);
 
 /* declarations for dynamic loading */
 PG_FUNCTION_INFO_V1(master_add_node);
@@ -448,6 +452,7 @@ ActivateNode(char *nodeName, int nodePort)
 
 	if (WorkerNodeIsPrimary(workerNode))
 	{
+		ReplicateAllSchemaNamesToNode(nodeName, nodePort);
 		ReplicateAllReferenceTablesToNode(nodeName, nodePort);
 	}
 
@@ -1525,6 +1530,62 @@ TupleToWorkerNode(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	}
 
 	return workerNode;
+}
+
+
+List *
+DistSchemaUniqueOidList(void)
+{
+	List *distTableOidList = DistTableOidList();
+	ListCell *distTableOidCell = NULL;
+	List *distSchemaOidList = NULL;
+
+	foreach(distTableOidCell, distTableOidList)
+	{
+		Oid distTableOid = lfirst_oid(distTableOidCell);
+		Oid namespace = get_rel_namespace(distTableOid);
+		char *schemaName = get_namespace_name(namespace);
+
+		if (strncmp(schemaName, "public", NAMEDATALEN) == 0)
+		{
+			continue;
+		}
+		distSchemaOidList = list_append_unique_oid(distSchemaOidList, namespace);
+	}
+
+	return distSchemaOidList;
+}
+
+
+void
+ReplicateAllSchemaNamesToNode(char *nodeName, int nodePort)
+{
+	List *schemaOidList = DistSchemaUniqueOidList();
+	ListCell *schemaOidCell = NULL;
+	Oid schemaId = InvalidOid;
+	uint64 connectionFlag = FORCE_NEW_CONNECTION;
+	MultiConnection *connection = NULL;
+
+	if(list_length(schemaOidList) == 0){
+		return;
+	}
+
+	connection = GetNodeUserDatabaseConnection(connectionFlag, nodeName,
+			nodePort, NULL, NULL);
+
+	foreach(schemaOidCell, schemaOidList)
+	{
+		schemaId = lfirst_oid(schemaOidCell);
+		const char *createSchemaDDL = CreateSchemaDDLCommand(schemaId);
+		StringInfo applySchemaCreationDDL = makeStringInfo();
+
+		Assert(schemaId != InvalidOid);
+		Assert(createSchemaDDL!= NULL);
+
+		appendStringInfo(applySchemaCreationDDL, "%s", createSchemaDDL);
+
+		ExecuteCriticalRemoteCommand(connection, applySchemaCreationDDL->data);
+	}
 }
 
 

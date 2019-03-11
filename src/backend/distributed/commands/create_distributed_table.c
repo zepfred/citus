@@ -1438,6 +1438,7 @@ TruncateLocalData(Oid relationId, DropBehavior behavior)
 	TruncateStmt *truncateStmt = makeNode(TruncateStmt);
 	truncateStmt->relations = list_make1_oid(relationId);
 	truncateStmt->behavior = behavior;
+
 	/*
 	 * Do not change the values of sequences owned by columns of this relation.
 	 * This is the default behaviour in the SQL TRUNCATE.

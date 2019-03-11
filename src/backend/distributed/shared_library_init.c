@@ -1062,7 +1062,7 @@ RegisterCitusConfigVariables(void)
 		&AutoTruncateDisabled,
 		false, PGC_USERSET, 0,
 		NULL, NULL, NULL
-	);
+		);
 
 	NormalizeWorkerListPath();
 

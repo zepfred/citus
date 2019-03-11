@@ -1055,6 +1055,15 @@ RegisterCitusConfigVariables(void)
 		GUC_NO_SHOW_ALL,
 		NULL, NULL, NULL);
 
+	DefineCustomBoolVariable(
+		"citus.disable_auto_truncate",
+		gettext_noop("don't automatically truncate local data after distributing table"),
+		NULL,
+		&AutoTruncateDisabled,
+		false, PGC_USERSET, 0,
+		NULL, NULL, NULL
+	);
+
 	NormalizeWorkerListPath();
 
 

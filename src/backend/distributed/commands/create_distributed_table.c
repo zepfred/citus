@@ -30,6 +30,7 @@
 #include "catalog/pg_trigger.h"
 #include "commands/defrem.h"
 #include "commands/extension.h"
+#include "commands/tablecmds.h"
 #include "commands/trigger.h"
 #include "distributed/commands/multi_copy.h"
 #include "distributed/citus_ruleutils.h"
@@ -74,6 +75,9 @@
 /* Replication model to use when creating distributed tables */
 int ReplicationModel = REPLICATION_MODEL_COORDINATOR;
 
+/* Disable automatically truncating data after distributing */
+bool AutoTruncateDisabled = false;
+
 
 /* local function forward declarations */
 static char AppropriateReplicationModel(char distributionMethod, bool viaDeprecatedAPI);
@@ -101,6 +105,7 @@ static void CopyLocalDataIntoShards(Oid relationId);
 static List * TupleDescColumnNameList(TupleDesc tupleDescriptor);
 static bool RelationUsesIdentityColumns(TupleDesc relationDesc);
 static bool CanUseExclusiveConnections(Oid relationId, bool localTableEmpty);
+static void TruncateLocalData(Oid relationId, DropBehavior behavior);
 
 /* exports for SQL callable functions */
 PG_FUNCTION_INFO_V1(master_create_distributed_table);
@@ -415,6 +420,26 @@ CreateDistributedTable(Oid relationId, Var *distributionColumn, char distributio
 		if (RegularTable(relationId))
 		{
 			CopyLocalDataIntoShards(relationId);
+
+			if (!AutoTruncateDisabled)
+			{
+				PG_TRY();
+				{
+					/*
+					 * Cascading here isn't safe, because this table might be referenced
+					 * by local tables which contain some data. If we cascade the truncate,
+					 * we'll lose data.
+					 */
+					TruncateLocalData(relationId, DROP_RESTRICT);
+				}
+				PG_CATCH();
+				{
+					ereport(ERROR, (errmsg("Truncating local data failed"),
+									errhint("try setting citus.disable_auto_truncate to "
+											"off and try again.")));
+				}
+				PG_END_TRY();
+			}
 		}
 	}
 
@@ -1400,4 +1425,23 @@ RelationUsesIdentityColumns(TupleDesc relationDesc)
 	}
 
 	return false;
+}
+
+
+/*
+ * TruncateLocalData removes the local data for the given relation. behavior
+ * indicates whether TRUNCATE should cascade or not.
+ */
+static void
+TruncateLocalData(Oid relationId, DropBehavior behavior)
+{
+	TruncateStmt *truncateStmt = makeNode(TruncateStmt);
+	truncateStmt->relations = list_make1_oid(relationId);
+	truncateStmt->behavior = behavior;
+	/*
+	 * Do not change the values of sequences owned by columns of this relation.
+	 * This is the default behaviour in the SQL TRUNCATE.
+	 */
+	truncateStmt->restart_seqs = false;
+	ExecuteTruncate(truncateStmt);
 }

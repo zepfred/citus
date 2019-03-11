@@ -107,6 +107,7 @@ typedef struct ShardPlacement
 
 /* Config variable managed via guc.c */
 extern int ReplicationModel;
+extern bool AutoTruncateDisabled;
 
 /* Size functions */
 extern Datum citus_table_size(PG_FUNCTION_ARGS);

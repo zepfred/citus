@@ -1787,6 +1787,7 @@ PlacementExecutionDone(TaskPlacementExecution *placementExecution, bool succeede
 	ShardCommandExecution *shardCommandExecution = NULL;
 	TaskExecutionState executionState;
 	PlacementExecutionOrder executionOrder;
+	int placementExecutionCount PG_USED_FOR_ASSERTS_ONLY = 0;
 
 	/* mark the placement execution as finished */
 	if (succeeded)
@@ -1799,6 +1800,7 @@ PlacementExecutionDone(TaskPlacementExecution *placementExecution, bool succeede
 	}
 
 	shardCommandExecution = placementExecution->shardCommandExecution;
+	placementExecutionCount = shardCommandExecution->placementExecutionCount;
 
 	/* determine the outcome of the overall task */
 	executionState = GetTaskExecutionState(shardCommandExecution);

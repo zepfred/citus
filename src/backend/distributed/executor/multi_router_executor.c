@@ -884,7 +884,7 @@ ExecuteSingleSelectTask(CitusScanState *scanState, Task *task)
  * (e.g. in case of a broadcast join) then the shard is skipped.
  */
 List *
-BuildPlacementSelectList(int32 groupId, List *relationShardList)
+BuildPlacementSelectList(uint32 groupId, List *relationShardList)
 {
 	return BuildPlacementAccessList(groupId, relationShardList, PLACEMENT_ACCESS_SELECT);
 }
@@ -894,7 +894,7 @@ BuildPlacementSelectList(int32 groupId, List *relationShardList)
  * BuildPlacementDDLList is a warpper around BuildPlacementAccessList() for DDL access.
  */
 List *
-BuildPlacementDDLList(int32 groupId, List *relationShardList)
+BuildPlacementDDLList(uint32 groupId, List *relationShardList)
 {
 	return BuildPlacementAccessList(groupId, relationShardList, PLACEMENT_ACCESS_DDL);
 }

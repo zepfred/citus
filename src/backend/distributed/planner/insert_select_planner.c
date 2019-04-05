@@ -65,7 +65,6 @@ static DeferredErrorMessage * InsertPartitionColumnMatchesSelect(Query *query,
 static DistributedPlan * CreateCoordinatorInsertSelectPlan(uint64 planId, Query *parse);
 static DeferredErrorMessage * CoordinatorInsertSelectSupported(Query *insertSelectQuery);
 static Query * WrapSubquery(Query *subquery);
-static bool CheckInsertSelectQuery(Query *query);
 static List * TwoPhaseInsertSelectTaskList(Oid targetRelationId, Query *insertSelectQuery,
 										   char *resultIdPrefix);
 
@@ -126,7 +125,7 @@ InsertSelectIntoLocalTable(Query *query)
  * This function is inspired from getInsertSelectQuery() on
  * rewrite/rewriteManip.c.
  */
-static bool
+bool
 CheckInsertSelectQuery(Query *query)
 {
 	CmdType commandType = query->commandType;

@@ -34,6 +34,7 @@ extern DistributedPlan * CreateInsertSelectPlan(uint64 planId, Query *originalQu
 												PlannerRestrictionContext *
 												plannerRestrictionContext);
 extern char * InsertSelectResultIdPrefix(uint64 planId);
+extern bool CheckInsertSelectQuery(Query *query);
 
 
 #endif /* INSERT_SELECT_PLANNER_H */

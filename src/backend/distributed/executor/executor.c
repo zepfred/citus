@@ -433,14 +433,15 @@ CreateDistributedExecution(DistributedPlan *distributedPlan,
 void
 StartDistributedExecution(DistributedExecution *execution)
 {
+	DistributedPlan *distributedPlan = execution->plan;
+	Job *job = distributedPlan->workerJob;
+	List *taskList = job->taskList;
+	bool multiTask = list_length(job->taskList) > 1 ? true : false;
+
 	if (MultiShardCommitProtocol != COMMIT_PROTOCOL_BARE)
 	{
-		DistributedPlan *distributedPlan = execution->plan;
 		if (DistributedStatementRequiresRollback(distributedPlan))
 		{
-			Job *job = distributedPlan->workerJob;
-			List *taskList = job->taskList;
-
 			BeginOrContinueCoordinatedTransaction();
 
 			if (TaskListRequires2PC(taskList))
@@ -451,6 +452,41 @@ StartDistributedExecution(DistributedExecution *execution)
 	}
 
 	execution->isTransaction = InCoordinatedTransaction();
+
+	if (multiTask && MultiShardConnectionType != SEQUENTIAL_CONNECTION)
+	{
+		Task *firstTask = linitial(taskList);
+		ShardInterval *firstShardInterval = LoadShardInterval(firstTask->anchorShardId);
+
+		if (distributedPlan->operation == CMD_SELECT)
+		{
+			RecordRelationParallelSelectAccessForTask(firstTask);
+		}
+		else if (distributedPlan->operation == CMD_INSERT)
+		{
+			if (firstTask->modifyWithSubquery)
+			{
+				RecordRelationParallelModifyAccessForTask(firstTask);
+			}
+		}
+		else if (distributedPlan->operation == CMD_UPDATE ||
+				 distributedPlan->operation == CMD_DELETE)
+		{
+			RecordRelationParallelModifyAccessForTask(firstTask);
+
+
+			/*
+			 * We prefer to mark with SELECT access as well because for multi shard
+			 * modification queries, the placement access list is always marked with both
+			 * DML and SELECT accesses.
+			 */
+			RecordRelationParallelSelectAccessForTask(firstTask);
+		}
+		else if (PartitionMethod(firstShardInterval->relationId) != DISTRIBUTE_BY_NONE)
+		{
+			RecordRelationParallelDDLAccessForTask(firstTask);
+		}
+	}
 
 	AssignTasksToConnections(execution);
 }
@@ -1541,8 +1577,17 @@ PlacementAccessListForTask(Task *task, ShardPlacement *taskPlacement)
 		accessType = PLACEMENT_ACCESS_SELECT;
 	}
 
-	placementAccessList = BuildPlacementSelectList(taskPlacement->groupId,
-												   relationShardList);
+
+	if (accessType == PLACEMENT_ACCESS_DDL)
+	{
+		placementAccessList = BuildPlacementDDLList(taskPlacement->groupId,
+				   relationShardList);
+	}
+	else
+	{
+		placementAccessList = BuildPlacementSelectList(taskPlacement->groupId,
+													   relationShardList);
+	}
 
 	if (addAnchorAccess)
 	{
@@ -1832,7 +1877,7 @@ PlacementExecutionDone(TaskPlacementExecution *placementExecution, bool succeede
 				placementExecution->placementExecutionIndex + 1;
 
 			/* if all tasks failed then we should already have errored out */
-			Assert(nextPlacementExecutionIndex < placementExecutionCount);
+			// Assert(nextPlacementExecutionIndex < placementExecutionCount);
 
 			/* get the next placement in the planning order */
 			nextPlacementExecution =

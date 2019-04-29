@@ -569,8 +569,6 @@ FinishDistributedExecution(DistributedExecution *execution)
 			/* TODO: should we keep this in the state machine? or cancel? */
 			ClearResults(connection, false);
 		}
-
-		/* TODO: can we be in SENT_COMMAND? */
 	}
 
 	UnsetCitusNoticeLevel();
@@ -1740,6 +1738,12 @@ ReceiveResults(WorkerSession *session, bool storeRows)
 		}
 		else if (resultStatus != PGRES_SINGLE_TUPLE)
 		{
+			/*
+			 * We can still recover from error using ROLLBACK TO SAVEPOINT,
+			 * unclaim all connections to allow that.
+			 */
+			FinishDistributedExecution(execution);
+
 			/* query failures are always hard errors */
 			ReportResultError(connection, result, ERROR);
 		}

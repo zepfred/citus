@@ -1240,6 +1240,8 @@ FinishRemoteTransactionSavepointRollback(MultiConnection *connection, SubTransac
 
 	PQclear(result);
 	ForgetResults(connection);
+
+	transaction->transactionState = REMOTE_TRANS_STARTED;
 }
 
 

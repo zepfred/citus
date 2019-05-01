@@ -285,14 +285,14 @@ RecordPlacementAccessToCache(Oid relationId, ShardPlacementAccessType accessType
 
 
 /*
- * RecordParallelAccessForTaskList gets a task list and records
+ * RecordParallelRelationAccessForTaskList gets a task list and records
  * the necessary parallel relation accesses for the task list.
  *
  * This function is used to enforce foreign keys from distributed
  * tables to reference tables.
  */
 void
-RecordParallelAccessForTaskList(List *taskList)
+RecordParallelRelationAccessForTaskList(List *taskList)
 {
 	Task *firstTask = NULL;
 
@@ -308,6 +308,10 @@ RecordParallelAccessForTaskList(List *taskList)
 		return;
 	}
 
+	/*
+	 * Since all the tasks in a task list is expected to operate on the same
+	 * distributed table(s), we only need to process the first task.
+	 */
 	firstTask = linitial(taskList);
 
 	if (firstTask->taskType == SQL_TASK)

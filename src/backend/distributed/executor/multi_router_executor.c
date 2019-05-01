@@ -1500,7 +1500,7 @@ ExecuteModifyTasks(List *taskList, bool expectResults, ParamListInfo paramListIn
 		CoordinatedTransactionUse2PC();
 	}
 
-	RecordParallelAccessForTaskList(taskList);
+	RecordParallelRelationAccessForTaskList(taskList);
 
 	if (firstTask->taskType == DDL_TASK || firstTask->taskType == VACUUM_ANALYZE_TASK)
 	{

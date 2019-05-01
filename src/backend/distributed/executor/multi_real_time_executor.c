@@ -109,7 +109,7 @@ MultiRealTimeExecute(Job *job)
 		BeginOrContinueCoordinatedTransaction();
 	}
 
-	RecordParallelAccessForTaskList(taskList);
+	RecordParallelRelationAccessForTaskList(taskList);
 
 	/* initialize task execution structures for remote execution */
 	foreach(taskCell, taskList)
